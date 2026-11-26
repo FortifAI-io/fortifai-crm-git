@@ -25,6 +25,7 @@ interface InvestorsViewProps {
   activeUsers: CrmUser[];
   onSelectContact: (id: string) => void;
   onUpdateContact: (id: string, patch: Partial<Contact>) => void;
+  onDeleteContact?: (id: string) => void;
   onComposeEmail: (contact: Contact) => void;
 }
 
@@ -94,6 +95,7 @@ export function InvestorsView({
   activeUsers,
   onSelectContact,
   onUpdateContact,
+  onDeleteContact,
   onComposeEmail,
 }: InvestorsViewProps) {
   const [density, setDensity] = useTableDensity('fortifai_investors_density_v1');
@@ -727,7 +729,8 @@ export function InvestorsView({
                           Suppressed
                         </span>
                       ) : (
-                        <button
+                        <span className="inline-flex items-center gap-1">
+                          <button
                           type="button"
                           disabled={!canSendCampaigns}
                           onClick={(e) => {
@@ -740,6 +743,22 @@ export function InvestorsView({
                           <Mail size={12} />
                           Outreach
                         </button>
+                          {canEdit && onDeleteContact && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Delete ${inv.full_name} (${inv.organization})?`)) {
+                                  onDeleteContact(inv.id);
+                                }
+                              }}
+                              title="Delete account"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </span>
                       )}
                     </td>
                   </tr>

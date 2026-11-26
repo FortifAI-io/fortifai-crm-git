@@ -13,7 +13,7 @@ import type {
 } from '../types/crm';
 
 const STORAGE_KEYS = {
-  CONTACTS: 'fortifai_crm_contacts_v2',
+  CONTACTS: 'fortifai_crm_contacts_v3_real',
   CUSTOM_FIELDS: 'fortifai_crm_custom_fields_v1',
   TELEMETRY: 'fortifai_crm_telemetry_v2',
   USERS: 'fortifai_crm_users_v1',
@@ -734,4 +734,18 @@ export function subscribeToCrmChanges(
   return () => {
     void client.removeChannel(channel);
   };
+}
+
+export async function deleteContactFromSupabase(
+  client: SupabaseClient,
+  contactId: string
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    await client.from("opportunities").delete().eq("contact_id", contactId);
+    const { error } = await client.from("contacts").delete().eq("id", contactId);
+    if (error) return { ok: false, message: error.message };
+    return { ok: true, message: "Deleted contact from Supabase." };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : "Delete failed" };
+  }
 }

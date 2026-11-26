@@ -34,6 +34,7 @@ interface CustomersViewProps {
   onNavigateToAnalytics: () => void;
   onSelectContact: (id: string) => void;
   onUpdateContact: (id: string, patch: Partial<Contact>) => void;
+  onDeleteContact?: (id: string) => void;
   onComposeEmail: (contact: Contact) => void;
   onOpenAccountIntelligence: (contact: Contact) => void;
 }
@@ -94,6 +95,7 @@ export function CustomersView({
   onNavigateToAnalytics,
   onSelectContact,
   onUpdateContact,
+  onDeleteContact,
   onComposeEmail,
   onOpenAccountIntelligence,
 }: CustomersViewProps) {
@@ -844,7 +846,8 @@ export function CustomersView({
                           <Sparkles size={11} />
                           Account Intelligence
                         </button>
-                        <button
+                        <span className="inline-flex items-center gap-1">
+                          <button
                           type="button"
                           disabled={!canSendCampaigns}
                           onClick={(e) => {
@@ -857,6 +860,22 @@ export function CustomersView({
                           <Mail size={12} />
                           Email
                         </button>
+                          {canEdit && onDeleteContact && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Delete ${c.full_name} (${c.organization})?`)) {
+                                  onDeleteContact(c.id);
+                                }
+                              }}
+                              title="Delete account"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </span>
                       </div>
                     </td>
                   </tr>

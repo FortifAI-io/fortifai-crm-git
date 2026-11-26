@@ -64,6 +64,7 @@ import {
   syncStateToSupabase,
   testSupabaseConnection,
   upsertCrmUserToSupabase,
+  deleteContactFromSupabase,
   upsertSingleContactToSupabase,
 } from './lib/supabase';
 import { AuthGate } from './components/AuthGate';
@@ -283,8 +284,13 @@ function ScaleWorkspace({
   } = useRbac();
 
   const [contacts, setContacts] = useState<Contact[]>(() => {
-    const users = normalizeCrmUsers(loadLocalState('USERS', INITIAL_CRM_USERS));
-    return normalizeContacts(loadLocalState('CONTACTS', INITIAL_CONTACTS), users);
+    try { localStorage.removeItem("fortifai_crm_contacts_v2"); } catch {}
+    const users = normalizeCrmUsers(loadLocalState("USERS", INITIAL_CRM_USERS));
+    const loaded = loadLocalState("CONTACTS", INITIAL_CONTACTS);
+    const cleaned = loaded.filter(
+      (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
+    );
+    return normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users);
   });
   const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>(() =>
     loadLocalState('CUSTOM_FIELDS', INITIAL_CUSTOM_FIELDS)
@@ -1523,6 +1529,25 @@ function ScaleWorkspace({
   // ============================================================================
   // MUTATION HANDLERS
   // ============================================================================
+
+  const deleteContact = (id: string) => {
+    const target = contacts.find((c) => c.id === id);
+    if (!target) return;
+    const canDelete =
+      target.contact_type === "investor" ? perms.can_edit_investors : perms.can_edit_customers;
+    if (!canDelete) {
+      showToast("Permission denied: cannot delete contacts in this domain.");
+      return;
+    }
+    setContacts((prev) => prev.filter((c) => c.id !== id));
+    setCompSelectedIds((prev) => prev.filter((cid) => cid !== id));
+    if (selectedContactId === id) setSelectedContactId(null);
+    if (isLiveConnected) {
+      const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
+      if (client) void deleteContactFromSupabase(client, id);
+    }
+    showToast(`Deleted ${target.full_name} (${target.organization}) from database`);
+  };
 
   const updateContact = (id: string, patch: Partial<Contact>) => {
     setContacts((prev) =>
@@ -3306,6 +3331,7 @@ function ScaleWorkspace({
             onNavigateToAnalytics={() => setActiveTab('customer_analytics')}
             onSelectContact={setSelectedContactId}
             onUpdateContact={updateContact}
+            onDeleteContact={deleteContact}
             onComposeEmail={(c) => jumpToComposerForContact(c)}
             onOpenAccountIntelligence={handleOpenAccountIntelligence}
           />
@@ -3336,6 +3362,7 @@ function ScaleWorkspace({
             activeUsers={activeUsers}
             onSelectContact={setSelectedContactId}
             onUpdateContact={updateContact}
+            onDeleteContact={deleteContact}
             onComposeEmail={(inv) => jumpToComposerForContact(inv)}
           />
         )}
@@ -3527,6 +3554,7 @@ function ScaleWorkspace({
           renderTemplate={renderEmailTemplate}
           onClose={() => setSelectedContactId(null)}
           onUpdateContact={updateContact}
+          onDeleteContact={deleteContact}
           onUpdateCustomFieldValue={updateCustomFieldValue}
           onComposeEmail={(target, customSubject, customBody) => {
             setSelectedContactId(null);

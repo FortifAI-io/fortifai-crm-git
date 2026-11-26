@@ -31,6 +31,7 @@ interface ContactDrawerProps {
   renderTemplate: (tpl: string, contact?: Contact) => string;
   onClose: () => void;
   onUpdateContact: (id: string, patch: Partial<Contact>) => void;
+  onDeleteContact?: (id: string) => void;
   onUpdateCustomFieldValue: (
     contactId: string,
     fieldKey: string,
@@ -66,6 +67,7 @@ export function ContactDrawer({
   renderTemplate,
   onClose,
   onUpdateContact,
+  onDeleteContact,
   onUpdateCustomFieldValue,
   onComposeEmail,
   onLogInboundReply,
@@ -724,13 +726,29 @@ export function ContactDrawer({
         </div>
 
         <div className="p-4 bg-slate-50 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900"
+            >
+              Close
+            </button>
+            {canEdit && onDeleteContact && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete ${contact.full_name} (${contact.organization}) permanently?`)) {
+                    onDeleteContact(contact.id);
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-md hover:bg-rose-100"
+              >
+                <Trash2 size={12} />
+                Delete Account
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             {contact.contact_type === 'customer' && onOpenAccountIntelligence && (
               <button
