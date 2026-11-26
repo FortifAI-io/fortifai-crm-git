@@ -10,7 +10,9 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Moon,
   Plus,
+  Sun,
   Send,
   Settings,
   Shield,
@@ -301,6 +303,22 @@ function ScaleWorkspace({
     return getDefaultTabForPermissions(perms);
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    return localStorage.getItem("fortifai_scale_theme") === "dark" ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    try {
+      localStorage.setItem("fortifai_scale_theme", theme);
+    } catch {}
+  }, [theme]);
   const [customerSectionOpen, setCustomerSectionOpen] = useState(true);
   const [investorSectionOpen, setInvestorSectionOpen] = useState(true);
 
@@ -2769,19 +2787,20 @@ function ScaleWorkspace({
       onRefreshSession={refreshCmsSession}
       onNotify={showToast}
     >
-      <div className="min-h-screen flex bg-[#F8FAFC] text-[#0F172A] antialiased">
+      <div className="min-h-screen flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
         {/* Deep Navy Sidebar (#0D1520) */}
         <aside
           className={`${
-            sidebarCollapsed ? 'w-16' : 'w-64'
+            sidebarCollapsed ? 'w-[52px]' : 'w-[206px]'
           } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 min-h-screen sticky top-0 h-screen`}
         >
-          <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800/80 shrink-0">
+          <div className="h-[46px] px-3 flex items-center justify-between border-b border-[#1E2D42] shrink-0">
             {!sidebarCollapsed && (
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="h-8 w-8 rounded-md bg-white/10 border border-white/15 flex items-center justify-center text-white font-semibold tracking-tight text-sm shrink-0">
-                  F
-                </div>
+                <span
+                  className="inline-block w-[11px] h-[14px] bg-[#6699CC] shrink-0"
+                  style={{ clipPath: "polygon(0% 22%, 100% 0%, 100% 100%, 0% 100%)" }}
+                />
                 <div className="min-w-0">
                   <div className="text-white font-semibold text-sm tracking-tight leading-none truncate">
                     <CmsText
@@ -2854,7 +2873,7 @@ function ScaleWorkspace({
                         key={item.id}
                         type="button"
                         onClick={() => navigateToTab(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                        className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
                           isActive
                             ? 'bg-white/10 text-white font-medium'
                             : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -2905,7 +2924,7 @@ function ScaleWorkspace({
                       key={item.id}
                       type="button"
                       onClick={() => navigateToTab(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                      className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
                         isActive
                           ? 'bg-white/10 text-white font-medium'
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -2935,7 +2954,7 @@ function ScaleWorkspace({
               <button
                 type="button"
                 onClick={() => navigateToTab('admin')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
                   activeTab === 'admin'
                     ? 'bg-white/10 text-white font-medium'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -2961,7 +2980,7 @@ function ScaleWorkspace({
             <button
               type="button"
               onClick={() => navigateToTab('settings')}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+              className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
                 activeTab === 'settings'
                   ? 'bg-white/10 text-white font-medium'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -3033,9 +3052,9 @@ function ScaleWorkspace({
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Top Header Bar */}
-        <header className="h-16 bg-white border-b border-[#E2E8F0] px-6 flex items-center justify-between gap-4 sticky top-0 z-20">
+        <header className="h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-base sm:text-lg font-semibold text-slate-900 tracking-tight truncate">
+            <h1 className="text-[13.5px] font-semibold text-white tracking-tight truncate">
               {activeTab === 'customer_analytics' && (
                 <CmsText
                   id="header.title.customer_analytics"
@@ -3121,7 +3140,7 @@ function ScaleWorkspace({
                 />
               )}
             </h1>
-            <span className="hidden 2xl:inline-block text-[11px] text-slate-500 whitespace-nowrap">
+            <span className="hidden 2xl:inline-block text-[11px] font-mono text-slate-400 whitespace-nowrap">
               · {currentUser.email} ({currentUser.role})
             </span>
           </div>
@@ -3147,11 +3166,21 @@ function ScaleWorkspace({
             <LiveCmsHeaderButton />
             <button
               type="button"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-slate-200 bg-[#152033] border border-[#263852] rounded-[4px] hover:bg-[#1E2D42] hover:text-white transition-colors whitespace-nowrap shrink-0"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              aria-label={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {theme === "dark" ? <Sun size={13} className="text-amber-400" /> : <Moon size={13} className="text-sky-300" />}
+              <span className="hidden md:inline">{theme === "dark" ? "Light" : "Dark"}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setIsAskMeOpen((prev) => !prev)}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 isAskMeOpen
-                  ? 'bg-[#0D1520] text-white border-[#0D1520]'
-                  : 'text-slate-800 bg-[#F8FAFC] border-[#E2E8F0] hover:bg-slate-100'
+                  ? 'bg-[#2E5A8A] text-white border-[#6699CC]'
+                  : 'text-slate-200 bg-[#152033] border-[#263852] hover:bg-[#1E2D42] hover:text-white'
               }`}
               title="Open Ask Scale Copilot (⌘K)"
             >
@@ -3177,7 +3206,7 @@ function ScaleWorkspace({
               disabled={!canImportAny}
               onClick={() => setIsCsvModalOpen(true)}
               title={!canImportAny ? 'Requires customer or investor edit permission' : undefined}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-[#E2E8F0] rounded-md hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-slate-200 bg-[#152033] border border-[#263852] rounded-[4px] hover:bg-[#1E2D42] hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
             >
               <Upload size={14} />
               <span className="hidden sm:inline">
@@ -3202,7 +3231,7 @@ function ScaleWorkspace({
                     }`
                   : undefined
               }
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#0D1520] rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-white bg-[#2E5A8A] border border-[#6699CC]/60 rounded-[4px] hover:bg-[#23476E] disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
             >
               <Plus size={14} />
               <CmsText
