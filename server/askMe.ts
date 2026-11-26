@@ -6,7 +6,7 @@ import {
   type Content,
   type FunctionDeclaration,
 } from '@google/genai';
-import { getServiceSupabaseClient } from './supabaseAdmin.ts';
+import { getServiceSupabaseClient } from './supabaseAdmin';
 import type {
   AskMeContactPill,
   AskMeDraftAction,
@@ -18,7 +18,7 @@ import type {
   CustomFieldDefinition,
   TelemetryEvent,
   UserPermissions,
-} from '../src/types/crm.ts';
+} from '../src/types/crm';
 
 export interface AskMeRequestPayload {
   messages: { role: 'user' | 'assistant'; text: string }[];

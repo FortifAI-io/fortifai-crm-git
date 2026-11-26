@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { CrmUser, UserPermissions, UserRole } from '../src/types/crm.ts';
+import type { CrmUser, UserPermissions, UserRole } from '../src/types/crm';
 
 let cachedAdminClient: SupabaseClient | null = null;
 let cachedConfigKey = '';

@@ -7,8 +7,8 @@ import type {
   DossierSource,
   TelemetryEvent,
   WedgeAgentName,
-} from '../src/types/crm.ts';
-import { getServiceSupabaseClient } from './supabaseAdmin.ts';
+} from '../src/types/crm';
+import { getServiceSupabaseClient } from './supabaseAdmin';
 
 export interface GenerateDossierRequest {
   contactId?: string;

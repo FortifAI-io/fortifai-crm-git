@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { handleAskMeRequest, type AskMeRequestPayload } from './server/askMe.ts';
-import { handleGenerateDossier, type GenerateDossierRequest } from './server/dossier.ts';
+import { handleAskMeRequest, type AskMeRequestPayload } from '../server/askMe';
+import { handleGenerateDossier, type GenerateDossierRequest } from '../server/dossier';
 import {
   fetchCrmUserByEmail,
   getServiceSupabaseClient,
   isServiceSupabaseConfigured,
-} from './server/supabaseAdmin.ts';
+} from '../server/supabaseAdmin';
 
 dotenv.config();
 
@@ -259,8 +259,7 @@ function verifyResendSvixSignature(req: Request, rawBody: string): boolean {
   });
 }
 
-async function startServer() {
-  const app = express();
+const app = express();
   app.use(
     express.json({
       limit: '5mb',
