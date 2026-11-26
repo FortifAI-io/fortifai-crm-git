@@ -18,7 +18,7 @@ const STORAGE_KEYS = {
   TELEMETRY: 'fortifai_crm_telemetry_v2',
   USERS: 'fortifai_crm_users_v1',
   DOSSIERS: 'fortifai_crm_dossiers_v1',
-  CONFIG: 'fortifai_crm_supabase_config_v2',
+  CONFIG: 'fortifai_crm_supabase_config_v3',
 };
 
 export interface SupabaseConnectionConfig {
@@ -37,7 +37,7 @@ export function getSavedConfig(): SupabaseConnectionConfig {
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SupabaseConnectionConfig>;
       return {
-        supabaseUrl: parsed.supabaseUrl || envUrl || 'https://iagdhvrlypymniqmicys.supabase.co',
+        supabaseUrl: parsed.supabaseUrl || envUrl || 'https://xwigfdsvknsgnlrbfshs.supabase.co',
         supabaseAnonKey: parsed.supabaseAnonKey || envAnon || '',
       };
     }
@@ -45,7 +45,7 @@ export function getSavedConfig(): SupabaseConnectionConfig {
     // ignore storage errors
   }
   return {
-    supabaseUrl: envUrl || 'https://iagdhvrlypymniqmicys.supabase.co',
+    supabaseUrl: envUrl || 'https://xwigfdsvknsgnlrbfshs.supabase.co',
     supabaseAnonKey: envAnon || '',
   };
 }
