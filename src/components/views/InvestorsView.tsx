@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Mail, RotateCcw, Search, ShieldAlert } from 'lucide-react';
+import { Trash2, ChevronLeft, ChevronRight, Mail, RotateCcw, Search, ShieldAlert } from "lucide-react";
 import type { Contact, CrmUser, DeliveryStatus } from '../../types/crm';
 import { INVESTOR_STAGES } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Mail, RotateCcw, Search, Sparkles } from 'lucide-react';
+import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles } from "lucide-react";
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
