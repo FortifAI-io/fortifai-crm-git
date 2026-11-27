@@ -386,7 +386,10 @@ function ScaleWorkspace({
   const [customerSectionOpen, setCustomerSectionOpen] = useState(true);
   const [investorSectionOpen, setInvestorSectionOpen] = useState(true);
 
-  const [isSignedOut, setIsSignedOut] = useState(false);
+  const [isSignedOut, setIsSignedOut] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return !window.sessionStorage.getItem('fortifai_scale_authed_email');
+  });
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [resendConfigured, setResendConfigured] = useState(false);
   const [geminiConfigured, setGeminiConfigured] = useState(false);
@@ -2855,6 +2858,7 @@ function ScaleWorkspace({
           });
           setAuthenticatedUserId(user.id);
           exitSimulation();
+          try { window.sessionStorage.setItem('fortifai_scale_authed_email', user.email.toLowerCase()); } catch {}
           setIsSignedOut(false);
           return { ok: true };
         }}
@@ -3141,7 +3145,8 @@ function ScaleWorkspace({
                       type="button"
                       onClick={() => {
                         setAccountMenuOpen(false);
-                        setIsSignedOut(true);
+                        try { window.sessionStorage.removeItem('fortifai_scale_authed_email'); } catch {}
+    setIsSignedOut(true);
                       }}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 transition-colors text-[12px] font-medium"
                     >

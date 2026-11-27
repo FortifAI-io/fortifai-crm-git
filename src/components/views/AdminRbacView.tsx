@@ -457,6 +457,88 @@ export function AdminRbacView({
           </span>
         </div>
       </div>
+    
+      {/* Workspace Password Control (Self + Super Admin Reset) */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--tx-primary)]">
+              Workspace Password Management
+            </h3>
+            <p className="text-xs text-[var(--tx-muted)] mt-0.5">
+              Set or rotate salted scrypt password hashes in <span className="font-mono">crm_users</span>. Super Admins can reset any team member&apos;s password.
+            </p>
+          </div>
+        </div>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            const targetEmail = String(fd.get("targetEmail") || currentUser.email).trim().toLowerCase();
+            const newPassword = String(fd.get("newPassword") || "");
+            if (newPassword.length < 8) {
+              alert("Password must be at least 8 characters.");
+              return;
+            }
+            const sessRes = await fetch("/api/auth/session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: currentUser.email }),
+            });
+            const sessJson = (await sessRes.json()) as { token?: string };
+            const resp = await fetch("/api/auth/set-password", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(sessJson.token ? { Authorization: `Bearer ${sessJson.token}` } : {}),
+              },
+              body: JSON.stringify({ targetEmail, newPassword }),
+            });
+            const out = (await resp.json()) as { ok?: boolean; error?: string };
+            if (!resp.ok || !out.ok) {
+              alert(out.error || "Unable to update password.");
+            } else {
+              alert(`Password updated for ${targetEmail}`);
+              e.currentTarget.reset();
+            }
+          }}
+          className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs"
+        >
+          <select
+            name="targetEmail"
+            defaultValue={currentUser.email}
+            disabled={currentUser.role !== "super_admin"}
+            className="sm:col-span-5 px-3 py-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)]"
+          >
+            {currentUser.role === "super_admin" ? (
+              crmUsers.map((u) => (
+                <option key={u.id} value={u.email}>
+                  {u.full_name} ({u.email})
+                </option>
+              ))
+            ) : (
+              <option value={currentUser.email}>
+                {currentUser.full_name} ({currentUser.email})
+              </option>
+            )}
+          </select>
+          <input
+            type="password"
+            name="newPassword"
+            required
+            minLength={8}
+            placeholder="New password (min 8 characters)"
+            className="sm:col-span-4 px-3 py-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)]"
+          />
+          <button
+            type="submit"
+            className="sm:col-span-3 px-4 py-2 rounded bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 transition-colors"
+          >
+            Update Password
+          </button>
+        </form>
+      </div>
+
     </div>
   );
 }

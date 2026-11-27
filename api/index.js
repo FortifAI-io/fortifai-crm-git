@@ -1670,6 +1670,147 @@ app.get("/api/config-status", (_req, res) => {
   const supabaseServerConfigured = isServiceSupabaseConfigured();
   res.json({ ok: true, resendConfigured, geminiConfigured, supabaseServerConfigured });
 });
+function hashPasswordScrypt(plainPassword) {
+  const salt = crypto2.randomBytes(16).toString("hex");
+  const derived = crypto2.scryptSync(plainPassword, salt, 64).toString("hex");
+  return `scrypt:${salt}:${derived}`;
+}
+function verifyPasswordScrypt(plainPassword, storedHash) {
+  if (!storedHash || !storedHash.startsWith("scrypt:")) return false;
+  const parts = storedHash.split(":");
+  if (parts.length !== 3) return false;
+  const [, salt, keyHex] = parts;
+  const keyBuf = Buffer.from(keyHex, "hex");
+  const derivedBuf = crypto2.scryptSync(plainPassword, salt, 64);
+  if (keyBuf.length !== derivedBuf.length) return false;
+  return crypto2.timingSafeEqual(keyBuf, derivedBuf);
+}
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!email || !isValidEmail(email) || !isAllowedDomainEmail(email)) {
+      return res.status(403).json({
+        ok: false,
+        error: "Access restricted to @fortifai.io or @tryfortifai.us accounts."
+      });
+    }
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        ok: false,
+        error: "Enter your workspace password (minimum 6 characters)."
+      });
+    }
+    const dbUser = await fetchCrmUserByEmail(email);
+    if (!dbUser) {
+      return res.status(403).json({
+        ok: false,
+        error: `Account "${email}" is not provisioned in crm_users.`
+      });
+    }
+    if (dbUser.is_active === false) {
+      return res.status(403).json({
+        ok: false,
+        error: `Account "${email}" has been deactivated.`
+      });
+    }
+    const storedHash = typeof dbUser.password_hash === "string" ? String(dbUser.password_hash) : "";
+    const bootstrapPassword = process.env.SCALE_ADMIN_PASSWORD || process.env.RESEND_WEBHOOK_SECRET || "FortifaiScale2026!";
+    let passwordValid = false;
+    const supabaseAdmin = getSupabaseAdmin();
+    if (storedHash) {
+      passwordValid = verifyPasswordScrypt(password, storedHash);
+    } else if (password === bootstrapPassword) {
+      passwordValid = true;
+      if (supabaseAdmin) {
+        const initialHash = hashPasswordScrypt(password);
+        await supabaseAdmin.from("crm_users").update({ password_hash: initialHash, last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email);
+      }
+    }
+    if (!passwordValid) {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid email or password."
+      });
+    }
+    if (supabaseAdmin && storedHash) {
+      await supabaseAdmin.from("crm_users").update({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email);
+    }
+    const role = typeof dbUser.role === "string" && SERVER_ROLE_PRESETS[dbUser.role] ? dbUser.role : "analyst_viewer";
+    const permissions = {
+      ...SERVER_ROLE_PRESETS[role],
+      ...dbUser.permissions || {}
+    };
+    const claims = {
+      email,
+      role,
+      permissions,
+      exp: Date.now() + 12 * 60 * 60 * 1e3
+    };
+    const token = signSessionToken(claims);
+    return res.status(200).json({
+      ok: true,
+      token,
+      user: {
+        id: dbUser.id || `usr_${email}`,
+        email,
+        full_name: dbUser.full_name || email.split("@")[0],
+        sender_display_name: dbUser.sender_display_name || dbUser.full_name || email.split("@")[0],
+        role,
+        permissions,
+        is_active: true
+      }
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Authentication error";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
+app.post("/api/auth/set-password", async (req, res) => {
+  try {
+    const authHeader = String(req.headers.authorization || "");
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const caller = verifySessionToken(bearer);
+    if (!caller) {
+      return res.status(401).json({ ok: false, error: "Valid session required." });
+    }
+    const body = req.body || {};
+    const targetEmail = String(body.targetEmail || caller.email).trim().toLowerCase();
+    const newPassword = String(body.newPassword || "");
+    if (targetEmail !== caller.email && caller.role !== "super_admin") {
+      return res.status(403).json({
+        ok: false,
+        error: "Only super_admin can reset another user's password."
+      });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        ok: false,
+        error: "Password must be at least 8 characters long."
+      });
+    }
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return res.status(500).json({
+        ok: false,
+        error: "SUPABASE_SERVICE_ROLE_KEY is required on the server to store password hashes."
+      });
+    }
+    const newHash = hashPasswordScrypt(newPassword);
+    const { error } = await supabaseAdmin.from("crm_users").update({ password_hash: newHash }).eq("email", targetEmail);
+    if (error) {
+      return res.status(500).json({
+        ok: false,
+        error: `Failed to save password_hash (ensure password_hash text column exists on crm_users): ${error.message}`
+      });
+    }
+    return res.status(200).json({ ok: true, targetEmail });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Password update failed";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
 app.post("/api/auth/session", async (req, res) => {
   const body = req.body || {};
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";

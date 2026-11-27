@@ -1,23 +1,19 @@
 import { useState, type FormEvent } from 'react';
-import { AlertCircle, CheckCircle2, Lock, Mail, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, KeyRound, Lock, Mail, ShieldCheck } from 'lucide-react';
 import type { CrmUser } from '../types/crm';
 import { ALLOWED_AUTH_DOMAINS } from '../data/seedData';
-import { buildSupabaseClient, verifyUserInSupabaseCrmUsers } from '../lib/supabase';
 
 interface AuthGateProps {
   crmUsers: CrmUser[];
   supabaseUrl: string;
   supabaseAnonKey: string;
-  onAuthenticated: (user: CrmUser) => Promise<{ ok: boolean; error?: string }>;
+  onAuthenticated: (user: CrmUser, token?: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
-export function AuthGate({
-  crmUsers,
-  supabaseUrl,
-  supabaseAnonKey,
-  onAuthenticated,
-}: AuthGateProps) {
+export function AuthGate({ onAuthenticated }: AuthGateProps) {
   const [email, setEmail] = useState('varun@fortifai.io');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,77 +29,70 @@ export function AuthGate({
 
     const domainAllowed = ALLOWED_AUTH_DOMAINS.some((d) => normalized.endsWith(d));
     if (!domainAllowed) {
-      setError(
-        'Access restricted to authenticated @fortifai.io or @tryfortifai.us workspace accounts.'
-      );
+      setError('Access restricted to @fortifai.io or @tryfortifai.us accounts.');
+      return;
+    }
+
+    if (!password) {
+      setError('Enter your workspace password.');
       return;
     }
 
     setSubmitting(true);
     try {
-      let matchedUser = crmUsers.find((u) => u.email.toLowerCase() === normalized);
+      const resp = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalized, password }),
+      });
+      const data = (await resp.json()) as {
+        ok?: boolean;
+        token?: string;
+        user?: CrmUser;
+        error?: string;
+      };
 
-      // If Supabase Live is configured, verify against remote crm_users table as well
-      const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
-      if (client) {
-        const remote = await verifyUserInSupabaseCrmUsers(client, normalized);
-        if (remote.ok && remote.user) {
-          matchedUser = remote.user;
-        }
-      }
-
-      if (!matchedUser) {
-        setError(
-          `Account "${normalized}" was not found in the crm_users access table. Ask a super_admin (varun@fortifai.io) to invite you first.`
-        );
-        setSubmitting(false);
+      if (!resp.ok || !data.ok || !data.user) {
+        setError(data.error || 'Invalid email or password.');
         return;
       }
 
-      if (!matchedUser.is_active) {
-        setError(
-          `Access revoked: "${matchedUser.email}" is currently deactivated in crm_users.`
-        );
-        setSubmitting(false);
-        return;
-      }
-
-      const sessionRes = await onAuthenticated(matchedUser);
+      const sessionRes = await onAuthenticated(data.user, data.token);
       if (!sessionRes.ok) {
-        setError(sessionRes.error || 'Unable to create authenticated session.');
+        setError(sessionRes.error || 'Unable to establish authenticated session.');
       }
+    } catch {
+      setError('Unable to reach authentication server. Check network or Vercel deployment.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0D1520] flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-xl border border-[#E2E8F0] shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-slate-100 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-md bg-[#0D1520] text-white flex items-center justify-center font-semibold text-sm">
-                F
-              </div>
-              <div>
-                <h1 className="text-base font-semibold text-slate-900">Fortifai Scale</h1>
-                <p className="text-[11px] text-slate-500">
-                  Restricted Workspace Access · @fortifai.io &amp; @tryfortifai.us
-                </p>
-              </div>
+    <div className="min-h-screen bg-[#090F17] flex items-center justify-center p-6 text-slate-100">
+      <div className="w-full max-w-md bg-[#0F1724] rounded-xl border border-[#1E2D42] shadow-2xl overflow-hidden">
+        <div className="p-6 border-b border-[#1E2D42] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-lg bg-sky-500 text-slate-950 flex items-center justify-center font-bold text-sm">
+              F
             </div>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-medium">
-              <ShieldCheck size={12} />
-              RBAC Enforced
-            </span>
+            <div>
+              <h1 className="text-base font-semibold text-slate-100">Fortifai Scale</h1>
+              <p className="text-[11px] text-slate-400">
+                Revenue &amp; Pipeline OS · Restricted Access
+              </p>
+            </div>
           </div>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium">
+            <ShieldCheck size={12} />
+            Password + RBAC
+          </span>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           <div>
-            <label className="block font-medium text-slate-700 mb-1.5">
-              Workspace Email Address
+            <label className="block font-medium text-slate-300 mb-1.5">
+              Workspace Email
             </label>
             <div className="relative">
               <Mail
@@ -113,24 +102,53 @@ export function AuthGate({
               <input
                 type="email"
                 required
+                autoComplete="username"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
                   setError(null);
                 }}
-                placeholder="name@fortifai.io or name@tryfortifai.us"
-                className="w-full pl-9 pr-3 py-2.5 border border-[#E2E8F0] rounded-md text-slate-900 focus:outline-none focus:border-slate-500"
+                placeholder="name@fortifai.io"
+                className="w-full pl-9 pr-3 py-2.5 bg-[#141F30] border border-[#1E2D42] rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400"
               />
             </div>
-            <p className="text-[11px] text-slate-400 mt-1.5">
-              Verified against <span className="font-mono text-slate-600">crm_users</span> in
-              Supabase. External domains are automatically denied.
-            </p>
+          </div>
+
+          <div>
+            <label className="block font-medium text-slate-300 mb-1.5">
+              Password
+            </label>
+            <div className="relative">
+              <KeyRound
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                placeholder="Enter your password"
+                className="w-full pl-9 pr-10 py-2.5 bg-[#141F30] border border-[#1E2D42] rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((p) => !p)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
 
           {error && (
-            <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-700 flex items-start gap-2">
-              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-start gap-2">
+              <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-400" />
               <span>{error}</span>
             </div>
           )}
@@ -138,50 +156,15 @@ export function AuthGate({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-md bg-[#0D1520] text-white font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors"
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 disabled:opacity-50 transition-colors"
           >
             <Lock size={14} />
-            {submitting ? 'Verifying crm_users...' : 'Sign In to Fortifai Scale'}
+            {submitting ? 'Authenticating...' : 'Sign In to Fortifai Scale'}
           </button>
 
-          <div className="pt-3 border-t border-slate-100 space-y-2">
-            <div className="text-[11px] font-medium text-slate-500">
-              Quick-Select Provisioned Team Member (crm_users):
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {crmUsers.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setEmail(u.email);
-                    setError(null);
-                  }}
-                  className="flex items-center justify-between px-3 py-2 rounded-md border border-slate-200 hover:bg-slate-50 text-left transition-colors"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-800 truncate">
-                      {u.full_name}{' '}
-                      <span className="text-slate-400 font-normal">({u.email})</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      Role: <span className="font-mono">{u.role}</span>
-                    </div>
-                  </div>
-                  {u.is_active ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
-                      <CheckCircle2 size={10} />
-                      Active
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-medium text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded shrink-0">
-                      Deactivated
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="text-[11px] text-slate-500 text-center pt-1">
+            Authorized @fortifai.io &amp; @tryfortifai.us personnel only. Managed via Admin &amp; RBAC.
+          </p>
         </form>
       </div>
     </div>
