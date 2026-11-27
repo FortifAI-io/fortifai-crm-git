@@ -1106,7 +1106,6 @@ export function CustomersView({
                           <span className="px-1.5 py-0.5 rounded text-[10.5px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">
                             {c.buyer_persona || "Exec"}
                           </span>
-                          <span className="text-[11px] text-slate-600">{personaGroup}</span>
                         </div>
                       </td>
 
