@@ -150,9 +150,41 @@ function mapSupabaseCrmUser(raw: Record<string, unknown>): CrmUser {
   };
 }
 
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function toDeterministicUuid(raw?: string | null): string | null {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (UUID_RE.test(s)) return s.toLowerCase();
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57, h3 = 0x1b873593, h4 = 0x85ebca6b;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+    h3 = Math.imul(h3 ^ ch, 2246822519);
+    h4 = Math.imul(h4 ^ ch, 3266489917);
+  }
+  const hex =
+    (h1 >>> 0).toString(16).padStart(8, "0") +
+    (h2 >>> 0).toString(16).padStart(8, "0") +
+    (h3 >>> 0).toString(16).padStart(8, "0") +
+    (h4 >>> 0).toString(16).padStart(8, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function toSafeIsoTimestamp(val?: string | null): string | null {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (!s || s.toLowerCase().includes("sched")) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function serializeCrmUserForSupabase(u: CrmUser): Record<string, unknown> {
   return {
-    id: u.id,
+    id: toDeterministicUuid(u.id),
     email: u.email.toLowerCase(),
     full_name: u.full_name,
     sender_display_name: u.sender_display_name || u.full_name,
@@ -270,7 +302,7 @@ export async function syncStateToSupabase(
 
     if (contacts.length > 0) {
       const contactRows = contacts.map((c) => ({
-        id: c.id,
+        id: toDeterministicUuid(c.id),
         email: c.email,
         first_name: c.first_name || '',
         last_name: c.last_name || '',
@@ -300,7 +332,7 @@ export async function syncStateToSupabase(
         relationship_strength: c.relationship_strength || null,
         tags: c.tags || [],
         unsubscribed: Boolean(c.unsubscribed),
-        last_contacted_at: c.last_contacted_at || null,
+        last_contacted_at: toSafeIsoTimestamp(c.last_contacted_at),
       }));
       const { error: cErr } = await client
         .from('contacts')
@@ -308,10 +340,10 @@ export async function syncStateToSupabase(
       if (cErr) return { ok: false, message: cErr.message };
 
       const opportunityRows = contacts.map((c) => ({
-        id: c.opportunity_id || `opp_${c.id}`,
-        contact_id: c.id,
+        id: toDeterministicUuid(c.opportunity_id || `opp_${c.id}`),
+        contact_id: toDeterministicUuid(c.id),
         opportunity_type: c.contact_type === 'investor' ? 'seed_investment' : 'enterprise_deal',
-        owner_id: c.owner_id,
+        owner_id: toDeterministicUuid(c.owner_id),
         owner_email: c.owner_email,
         stage: c.stage,
         outcome: c.outcome || null,
@@ -342,7 +374,7 @@ export async function syncStateToSupabase(
 
     if (customFields.length > 0) {
       const fieldRows = customFields.map((f, idx) => ({
-        id: f.id,
+        id: toDeterministicUuid(f.id),
         entity_scope: f.entity_scope,
         field_key: f.field_key,
         field_label: f.field_label,
@@ -741,8 +773,8 @@ export async function deleteContactFromSupabase(
   contactId: string
 ): Promise<{ ok: boolean; message: string }> {
   try {
-    await client.from("opportunities").delete().eq("contact_id", contactId);
-    const { error } = await client.from("contacts").delete().eq("id", contactId);
+    await client.from("opportunities").delete().eq("contact_id", toDeterministicUuid(contactId) || contactId);
+    const { error } = await client.from("contacts").delete().eq("id", toDeterministicUuid(contactId) || contactId);
     if (error) return { ok: false, message: error.message };
     return { ok: true, message: "Deleted contact from Supabase." };
   } catch (err) {
