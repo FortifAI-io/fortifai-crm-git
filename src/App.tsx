@@ -3326,7 +3326,7 @@ function ScaleWorkspace({
               contacts={contacts}
               rules={pipelineRules}
               onOpenSettingsRules={() => navigateToTab("settings")}
-              onUpdateContact={handleUpdateContact}
+              onUpdateContact={updateContact}
               onSelectContact={(id) => setSelectedContactId(id)}
             pipelineAnalytics={pipelineAnalytics}
             arrTarget2027={arrTarget2027}
