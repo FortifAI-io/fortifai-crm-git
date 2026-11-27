@@ -354,8 +354,122 @@ export function PipelineHealthView({
       ? { label: "AT RISK", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" }
       : { label: "FAILING BENCHMARKS", cls: "bg-rose-500/15 text-rose-400 border-rose-500/30" };
 
+  const baselineSnapshot = useMemo(() => {
+    const activeCustomers = contacts.filter(
+      (c) =>
+        String(c.contact_type || "").toLowerCase() !== "investor" &&
+        !c.omit_from_pipeline &&
+        !/^8\b|^9\b|closed lost|no response/i.test(String(c.stage || ""))
+    );
+    const targetClosedDeals = Math.max(1, Math.round(arrTarget2027 / Math.max(1, avgAcvAssumption)));
+    const requiredPipelineDeals = Math.max(
+      1,
+      Math.round((arrTarget2027 * coverageMultiple) / Math.max(1, avgAcvAssumption))
+    );
+    const stage4PlusDeals = activeCustomers.filter((c) =>
+      /^[4-7]\b|decisionmaker|internal review|commercial|contracting|closed won/i.test(
+        String(c.stage || "").trim()
+      )
+    );
+    const stage4PlusArr = stage4PlusDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
+
+    return {
+      targetArr: arrTarget2027,
+      targetClosedDeals,
+      requiredPipelineArr: Math.round(arrTarget2027 * coverageMultiple),
+      requiredPipelineDeals,
+      actualArr: pipelineAnalytics.actualPipelineArr,
+      actualDealsCount: pipelineAnalytics.activeDealsCount,
+      weightedArr: pipelineAnalytics.weightedPipelineArr,
+      weightedAttainmentPct: pipelineAnalytics.weightedAttainmentPct,
+      stage4PlusCount: stage4PlusDeals.length,
+      stage4PlusArr,
+    };
+  }, [contacts, pipelineAnalytics, arrTarget2027, avgAcvAssumption, coverageMultiple]);
+
   return (
     <div className="p-5 space-y-5 max-w-[1600px] w-full mx-auto">
+      {/* Top Baseline & Funnel Snapshot Strip */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400">
+              FY27 Pipeline Baseline &amp; Funnel Snapshot
+            </span>
+            <span className="text-[11px] text-[var(--tx-muted)]">
+              · Target vs. Active Pipeline
+            </span>
+          </div>
+          {canConfigureRules && (
+            <button
+              type="button"
+              onClick={onOpenSettingsRules}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
+            >
+              <Sliders size={11} className="text-sky-400" />
+              Configure Benchmarks &amp; Formulas
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="px-3 py-2 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)]">
+            <div className="text-[11px] font-medium text-[var(--tx-muted)]">FY27 Target ARR</div>
+            <div className="mt-1 text-xl font-bold tabular-nums text-[var(--tx-primary)]">
+              {formatMillions(baselineSnapshot.targetArr)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-[var(--tx-secondary)] tabular-nums">
+              {baselineSnapshot.targetClosedDeals} closed deals @ {formatMillions(avgAcvAssumption)} ACV
+            </div>
+          </div>
+
+          <div className="px-3 py-2 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)]">
+            <div className="text-[11px] font-medium text-[var(--tx-muted)]">
+              Target Pipeline ({coverageMultiple}x)
+            </div>
+            <div className="mt-1 text-xl font-bold tabular-nums text-[var(--tx-primary)]">
+              {formatMillions(baselineSnapshot.requiredPipelineArr)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-[var(--tx-secondary)] tabular-nums">
+              {baselineSnapshot.requiredPipelineDeals} qualified deals required
+            </div>
+          </div>
+
+          <div className="px-3 py-2 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)]">
+            <div className="text-[11px] font-medium text-[var(--tx-muted)]">Actual Open Pipeline</div>
+            <div className="mt-1 text-xl font-bold tabular-nums text-sky-400">
+              {formatMillions(baselineSnapshot.actualArr)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-[var(--tx-secondary)] tabular-nums">
+              {baselineSnapshot.actualDealsCount} active deals in pipe
+            </div>
+          </div>
+
+          <div className="px-3 py-2 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)]">
+            <div className="text-[11px] font-medium text-[var(--tx-muted)]">Weighted Pipeline ARR</div>
+            <div className="mt-1 text-xl font-bold tabular-nums text-emerald-400">
+              {formatMillions(baselineSnapshot.weightedArr)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-[var(--tx-secondary)] tabular-nums">
+              {baselineSnapshot.weightedAttainmentPct}% of {formatMillions(baselineSnapshot.targetArr)} quota
+            </div>
+          </div>
+
+          <div className="px-3 py-2 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)]">
+            <div className="text-[11px] font-medium text-[var(--tx-muted)]">Late-Stage (Stage 4+)</div>
+            <div className="mt-1 text-xl font-bold tabular-nums text-amber-400">
+              {baselineSnapshot.stage4PlusCount}{" "}
+              <span className="text-xs font-normal text-[var(--tx-muted)]">
+                {baselineSnapshot.stage4PlusCount === 1 ? "account" : "accounts"}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[11px] text-[var(--tx-secondary)] tabular-nums">
+              {formatMillions(baselineSnapshot.stage4PlusArr)} in Stage 4–7
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Top Autonomous Health Command Strip (4 Cards) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl px-5 py-4">
@@ -521,13 +635,7 @@ export function PipelineHealthView({
                   <span>
                     {h.activeCount} scheduled deals · {h.dealsNeeded} net-new needed
                   </span>
-                  {h.staleCount > 0 ? (
-                    <span className="text-rose-400 font-medium">
-                      {h.staleCount} stalled (&gt;{rules.staleSlaDays}d)
-                    </span>
-                  ) : (
-                    <span className="text-emerald-400 font-medium">0 SLA breaches</span>
-                  )}
+                  
                 </div>
               </div>
             );
