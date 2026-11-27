@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles, ChevronDown, ChevronUp, Layers, Target, Users } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Layers, Mail, RotateCcw, Search, Sparkles, Target, Users, X, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from "../../utils/crmHelpers";
@@ -159,6 +159,9 @@ export function CustomersView({
   const [usListedQuickOnly, setUsListedQuickOnly] = useState(false);
   const [bestFitQuickOnly, setBestFitQuickOnly] = useState(false);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(100);
   const [sortState, setSortState] = useState<ColumnSortState | null>(null);
 
   // Per-column header filters (null = all values / inactive)
@@ -281,7 +284,7 @@ export function CustomersView({
   ]);
 
   const filteredAndSortedCustomers = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const list = customers.filter((c) => {
       if (q) {
         const matchesSearch =
@@ -411,7 +414,7 @@ export function CustomersView({
     });
   }, [
     customers,
-    search,
+    deferredSearch,
     accountFilter,
     tierFilter,
     personaFilter,
@@ -433,6 +436,41 @@ export function CustomersView({
     categoryFilter,
     sortState,
   ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    deferredSearch,
+    f500QuickOnly,
+    usListedQuickOnly,
+    bestFitQuickOnly,
+    usListedFilter,
+    categoryFilter,
+    accountFilter,
+    tierFilter,
+    personaFilter,
+    sectorFilter,
+    contactFilter,
+    regionFilter,
+    locationFilter,
+    icpRange,
+    stageFilter,
+    ownerFilter,
+    deliveryFilter,
+    arrRange,
+    probRange,
+    closeQtrFilter,
+    sortState,
+  ]);
+
+  const totalFilteredCount = filteredAndSortedCustomers.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredCount / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStartIdx = (safePage - 1) * pageSize;
+  const paginatedCustomers = useMemo(
+    () => filteredAndSortedCustomers.slice(pageStartIdx, pageStartIdx + pageSize),
+    [filteredAndSortedCustomers, pageStartIdx, pageSize]
+  );
 
   const totalArr = filteredAndSortedCustomers.reduce((sum, c) => sum + (c.amount_usd || 0), 0);
   const weightedArr = filteredAndSortedCustomers.reduce(
@@ -738,8 +776,18 @@ export function CustomersView({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search account, sector, contact, location..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-[#E2E8F0] rounded-md focus:outline-none focus:bg-white focus:border-slate-400"
+            className="w-full h-9 pl-9 pr-8 text-[13px] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] rounded-lg text-[var(--tx-primary)] focus:outline-none focus:border-[#3B82F6]"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-[var(--tx-muted)] hover:text-[var(--tx-primary)]"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1042,7 +1090,7 @@ export function CustomersView({
               </tbody>
             ) : (
               <tbody className={`divide-y divide-slate-100 tabular-nums ${densityCls.rowText}`}>
-                {filteredAndSortedCustomers.map((c) => {
+                {paginatedCustomers.map((c) => {
                   const usListed = getUsListedValue(c);
                   const fitCategory = getFitCategoryValue(c);
                   const personaGroup = getBuyerPersonaGroup(c.buyer_persona);
@@ -1344,6 +1392,62 @@ export function CustomersView({
             )}
           </table>
         </div>
+
+        {totalFilteredCount > 0 && (
+          <div className="px-4 py-3 border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] flex flex-wrap items-center justify-between gap-3 text-[12px] text-[var(--tx-secondary)]">
+            <div className="tabular-nums">
+              Showing{' '}
+              <span className="font-semibold text-[var(--tx-primary)]">
+                {pageStartIdx + 1}–{Math.min(pageStartIdx + pageSize, totalFilteredCount)}
+              </span>{' '}
+              of{' '}
+              <span className="font-semibold text-[var(--tx-primary)]">{totalFilteredCount}</span>{' '}
+              accounts
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5">
+                <span className="text-[var(--tx-muted)]">Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-7 px-2 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[12px] text-[var(--tx-primary)]"
+                >
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={500}>500</option>
+                </select>
+              </label>
+
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 px-2.5 h-7 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-[#3B82F6] disabled:opacity-40 transition-colors"
+                >
+                  <ChevronLeft size={13} />
+                  Prev
+                </button>
+                <span className="px-2.5 tabular-nums font-medium text-[var(--tx-primary)]">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 px-2.5 h-7 rounded-md bg-[var(--bg-subtle)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-[#3B82F6] disabled:opacity-40 transition-colors"
+                >
+                  Next
+                  <ChevronRight size={13} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

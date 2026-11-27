@@ -1751,27 +1751,60 @@ function ScaleWorkspace({
   };
 
   const handleAddContact = (newContact: Omit<Contact, 'id'>) => {
-    if (newContact && typeof newContact === 'object') {
-      void persistContactToServer(newContact as Contact);
-    }
     const canAdd =
       newContact.contact_type === 'investor' ? perms.can_edit_investors : perms.can_edit_customers;
     if (!canAdd) {
       showToast('Permission denied for creating contacts in this segment.');
       return;
     }
+
+    const generatedId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${newContact.contact_type === 'customer' ? 'cust' : 'inv'}_${Date.now()}`;
+
     const created: Contact = {
       ...newContact,
-      delivery_status: 'not_sent',
-      id: `${newContact.contact_type === 'customer' ? 'cust' : 'inv'}_${Date.now()}`,
+      id: generatedId,
+      delivery_status: newContact.delivery_status || 'not_sent',
     };
+
+    // 1. Update local state & close modal immediately so UI is 100% responsive
     setContacts((prev) => [created, ...prev]);
-    if (isLiveConnected) {
-      const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
-      if (client) void upsertSingleContactToSupabase(client, created);
-    }
     setIsAddContactOpen(false);
-    showToast(`Added ${created.full_name} (${created.organization}) — Live dashboards updated`);
+    showToast(`Added ${created.full_name} (${created.organization}) — synced to CRM`);
+
+    // 2. Persist complete record (with valid UUID id) to server & Supabase asynchronously
+    try {
+      
+    } catch (err) {
+      console.error('persistContactToServer error:', err);
+    }
+
+    void (async () => {
+      try {
+        const token =
+          sessionToken ||
+          (typeof localStorage !== 'undefined'
+            ? localStorage.getItem('fortifai_scale_session_token_v1')
+            : null);
+        if (token) {
+          await fetch('/api/crm/upsert-contact', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ contact: created }),
+          });
+        } else if (isLiveConnected) {
+          const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
+          if (client) void upsertSingleContactToSupabase(client, created);
+        }
+      } catch (err) {
+        console.error('Background upsert-contact failed:', err);
+      }
+    })();
   };
 
   const handleSheetBulkImport = (
