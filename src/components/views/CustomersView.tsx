@@ -765,7 +765,7 @@ export function CustomersView({
               <tr className="bg-slate-50/80 border-b border-[#E2E8F0] text-[11px] font-semibold tracking-wider text-slate-500">
                 <ColumnFilterHeader
                   columnKey="account"
-                  label="Account & Tier (C, J, L)"
+                  label="Account & Tier"
                   thClassName={`${densityCls.headerCell} sticky left-0 z-20 bg-slate-50 min-w-[200px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
@@ -785,7 +785,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="contact"
-                  label="Executive & Job Title (A–D, G)"
+                  label="Executive & Job Title"
                   thClassName={`${densityCls.headerCell} sticky left-[200px] z-20 bg-slate-50 min-w-[230px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
@@ -796,7 +796,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="sector"
-                  label="Sector (E)"
+                  label="Sector"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
@@ -807,7 +807,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="location"
-                  label="Region (F)"
+                  label="Region"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
@@ -827,7 +827,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="persona"
-                  label="Buyer Persona & ICP Tag (H–I)"
+                  label="Buyer Persona & ICP Tag"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
@@ -838,7 +838,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="us_listed"
-                  label="US Listed (K)"
+                  label="US Listed"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
@@ -852,7 +852,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="fit_category"
-                  label="Category (M)"
+                  label="Category"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
