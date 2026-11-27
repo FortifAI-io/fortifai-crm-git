@@ -201,10 +201,9 @@ function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): 
 }
 
 function getDefaultTabForPermissions(perms: UserPermissions, role?: UserRole): ActiveTab {
-  if (perms.can_view_customers) return 'customers';
-  if (perms.can_view_investors) return 'investors';
-  if (role === 'super_admin') return 'settings';
-  return 'customers';
+  if (perms.can_view_customers) return 'pipeline_health';
+  if (perms.can_view_investors) return 'investor_funnel';
+  return role === 'super_admin' ? 'settings' : 'pipeline_health';
 }
 
 function parseTabFromLocation(): ActiveTab | null {
@@ -3026,6 +3025,10 @@ function ScaleWorkspace({
             return updated;
           });
           setAuthenticatedUserId(user.id);
+          if (!parseTabFromLocation()) {
+            const nextPerms = user.permissions;
+            setActiveTab(getDefaultTabForPermissions(nextPerms, user.role));
+          }
           exitSimulation();
           try { window.sessionStorage.setItem('fortifai_scale_authed_email', user.email.toLowerCase()); } catch {}
           setIsSignedOut(false);
