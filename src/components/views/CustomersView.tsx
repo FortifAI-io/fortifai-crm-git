@@ -85,6 +85,29 @@ function matchesNumeric(val: number, range: NumericFilterRange | null): boolean 
   return true;
 }
 
+function getBuyerPersonaGroup(icpTag?: string): string {
+  const tag = (icpTag || "").trim().toUpperCase();
+  if (tag === "CCO/GC" || tag === "CAE") return "Audit, Risk & Compliance";
+  if (tag === "CFO") return "CFO Office";
+  if (tag === "CPO") return "Procurement Leadership";
+  return "Executive Leadership";
+}
+
+function getUsListedValue(c: Contact): "Yes" | "No" {
+  const raw = String(c.custom_fields?.us_listed || "").trim().toLowerCase();
+  if (raw === "yes" || raw === "true" || raw === "1") return "Yes";
+  if (raw === "no" || raw === "false" || raw === "0") return "No";
+  return c.fortune_500 ? "Yes" : "No";
+}
+
+function getFitCategoryValue(c: Contact): string {
+  const raw = String(c.custom_fields?.fit_category || "").trim();
+  if (raw) return raw;
+  if ((c.icp_score ?? 0) >= 70) return "Best-fit";
+  if ((c.icp_score ?? 0) >= 55) return "Adjacent";
+  return "Other";
+}
+
 export function CustomersView({
   canEdit,
   canSendCampaigns,
@@ -278,6 +301,11 @@ export function CustomersView({
       if (closeQtrFilter !== null && !closeQtrFilter.includes(c.expected_close || 'Q2 2027')) {
         return false;
       }
+      if (f500QuickOnly && !c.fortune_500) return false;
+      if (usListedQuickOnly && getUsListedValue(c) !== "Yes") return false;
+      if (bestFitQuickOnly && getFitCategoryValue(c) !== "Best-fit") return false;
+      if (usListedFilter !== null && !usListedFilter.includes(getUsListedValue(c))) return false;
+      if (categoryFilter !== null && !categoryFilter.includes(getFitCategoryValue(c))) return false;
       return true;
     });
 
@@ -310,6 +338,10 @@ export function CustomersView({
           return ((a.amount_usd || 0) - (b.amount_usd || 0)) * dir;
         case 'probability':
           return ((a.probability ?? 0) - (b.probability ?? 0)) * dir;
+        case 'us_listed':
+          return getUsListedValue(a).localeCompare(getUsListedValue(b)) * dir;
+        case 'fit_category':
+          return getFitCategoryValue(a).localeCompare(getFitCategoryValue(b)) * dir;
         case 'expected_close':
           return (a.expected_close || 'Q2 2027').localeCompare(b.expected_close || 'Q2 2027') * dir;
         default:
@@ -333,6 +365,11 @@ export function CustomersView({
     arrRange,
     probRange,
     closeQtrFilter,
+    f500QuickOnly,
+    usListedQuickOnly,
+    bestFitQuickOnly,
+    usListedFilter,
+    categoryFilter,
     sortState,
   ]);
 
@@ -368,6 +405,11 @@ export function CustomersView({
       : 0;
 
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [f500QuickOnly, setF500QuickOnly] = useState(false);
+  const [usListedQuickOnly, setUsListedQuickOnly] = useState(false);
+  const [bestFitQuickOnly, setBestFitQuickOnly] = useState(false);
+  const [usListedFilter, setUsListedFilter] = useState<string[] | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string[] | null>(null);
 
   const dbMetrics = useMemo(() => {
     const scopeList = customers;
@@ -645,7 +687,40 @@ export function CustomersView({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setF500QuickOnly((p) => !p)}
+            className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
+              f500QuickOnly
+                ? "bg-[#0D1520] text-white border-[#0D1520]"
+                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+            }`}
+          >
+            Fortune 500
+          </button>
+          <button
+            type="button"
+            onClick={() => setUsListedQuickOnly((p) => !p)}
+            className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
+              usListedQuickOnly
+                ? "bg-[#0D1520] text-white border-[#0D1520]"
+                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+            }`}
+          >
+            US Listed
+          </button>
+          <button
+            type="button"
+            onClick={() => setBestFitQuickOnly((p) => !p)}
+            className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
+              bestFitQuickOnly
+                ? "bg-[#0D1520] text-white border-[#0D1520]"
+                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+            }`}
+          >
+            Best-fit
+          </button>
           {(activeFilterCount > 0 || sortState !== null) && (
             <button
               type="button"
@@ -690,8 +765,8 @@ export function CustomersView({
               <tr className="bg-slate-50/80 border-b border-[#E2E8F0] text-[11px] font-semibold tracking-wider text-slate-500">
                 <ColumnFilterHeader
                   columnKey="account"
-                  label="Account & Tier"
-                  thClassName={densityCls.headerCell}
+                  label="Account & Tier (C, J, L)"
+                  thClassName={`${densityCls.headerCell} sticky left-0 z-20 bg-slate-50 min-w-[200px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -700,36 +775,18 @@ export function CustomersView({
                   onChangeSelectedValues={setAccountFilter}
                   subFacets={[
                     {
-                      id: 'tier',
-                      label: 'Tier',
+                      id: "tier",
+                      label: "Tier",
                       options: columnOptions.tiers,
                       selectedValues: tierFilter,
                       onChange: setTierFilter,
                     },
-                    {
-                      id: 'persona',
-                      label: 'Buyer Persona',
-                      options: columnOptions.personas,
-                      selectedValues: personaFilter,
-                      onChange: setPersonaFilter,
-                    },
                   ]}
                 />
                 <ColumnFilterHeader
-                  columnKey="sector"
-                  label="Sector"
-                  thClassName={densityCls.headerCell}
-                  mode="categorical"
-                  sortState={sortState}
-                  onChangeSort={setSortState}
-                  options={columnOptions.sectors}
-                  selectedValues={sectorFilter}
-                  onChangeSelectedValues={setSectorFilter}
-                />
-                <ColumnFilterHeader
                   columnKey="contact"
-                  label="Executive Contact"
-                  thClassName={densityCls.headerCell}
+                  label="Executive & Job Title (A–D, G)"
+                  thClassName={`${densityCls.headerCell} sticky left-[200px] z-20 bg-slate-50 min-w-[230px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -738,9 +795,20 @@ export function CustomersView({
                   onChangeSelectedValues={setContactFilter}
                 />
                 <ColumnFilterHeader
+                  columnKey="sector"
+                  label="Sector (E)"
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
+                  mode="categorical"
+                  sortState={sortState}
+                  onChangeSort={setSortState}
+                  options={columnOptions.sectors}
+                  selectedValues={sectorFilter}
+                  onChangeSelectedValues={setSectorFilter}
+                />
+                <ColumnFilterHeader
                   columnKey="location"
-                  label="Location"
-                  thClassName={densityCls.headerCell}
+                  label="Region (F)"
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -749,8 +817,8 @@ export function CustomersView({
                   onChangeSelectedValues={setLocationFilter}
                   subFacets={[
                     {
-                      id: 'region',
-                      label: 'Region',
+                      id: "region",
+                      label: "Region",
                       options: columnOptions.regions,
                       selectedValues: regionFilter,
                       onChange: setRegionFilter,
@@ -758,25 +826,65 @@ export function CustomersView({
                   ]}
                 />
                 <ColumnFilterHeader
+                  columnKey="persona"
+                  label="Buyer Persona & ICP Tag (H–I)"
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
+                  mode="categorical"
+                  sortState={sortState}
+                  onChangeSort={setSortState}
+                  options={columnOptions.personas}
+                  selectedValues={personaFilter}
+                  onChangeSelectedValues={setPersonaFilter}
+                />
+                <ColumnFilterHeader
+                  columnKey="us_listed"
+                  label="US Listed (K)"
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
+                  mode="categorical"
+                  sortState={sortState}
+                  onChangeSort={setSortState}
+                  options={[
+                    { value: "Yes", label: "Yes", count: customers.filter((x) => getUsListedValue(x) === "Yes").length },
+                    { value: "No", label: "No", count: customers.filter((x) => getUsListedValue(x) === "No").length },
+                  ]}
+                  selectedValues={usListedFilter}
+                  onChangeSelectedValues={setUsListedFilter}
+                />
+                <ColumnFilterHeader
+                  columnKey="fit_category"
+                  label="Category (M)"
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
+                  mode="categorical"
+                  sortState={sortState}
+                  onChangeSort={setSortState}
+                  options={[
+                    { value: "Best-fit", label: "Best-fit", count: customers.filter((x) => getFitCategoryValue(x) === "Best-fit").length },
+                    { value: "Adjacent", label: "Adjacent", count: customers.filter((x) => getFitCategoryValue(x) === "Adjacent").length },
+                    { value: "Other", label: "Other", count: customers.filter((x) => getFitCategoryValue(x) === "Other").length },
+                  ]}
+                  selectedValues={categoryFilter}
+                  onChangeSelectedValues={setCategoryFilter}
+                />
+                <ColumnFilterHeader
                   columnKey="icp_score"
                   label="ICP Score"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="numeric"
                   sortState={sortState}
                   onChangeSort={setSortState}
                   numericRange={icpRange}
                   onChangeNumericRange={setIcpRange}
-                  numericPlaceholder={{ min: '0', max: '100' }}
+                  numericPlaceholder={{ min: "0", max: "100" }}
                   numericPresets={[
-                    { label: '≥ 80', min: 80 },
-                    { label: '60–79', min: 60, max: 79 },
-                    { label: '< 60', max: 59 },
+                    { label: "≥ 80", min: 80 },
+                    { label: "60–79", min: 60, max: 79 },
+                    { label: "< 60", max: 59 },
                   ]}
                 />
                 <ColumnFilterHeader
                   columnKey="stage"
                   label="Stage (Inline)"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -787,7 +895,7 @@ export function CustomersView({
                 <ColumnFilterHeader
                   columnKey="owner"
                   label="Deal Owner"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -798,7 +906,7 @@ export function CustomersView({
                 <ColumnFilterHeader
                   columnKey="delivery_status"
                   label="Delivery Status"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -809,40 +917,40 @@ export function CustomersView({
                 <ColumnFilterHeader
                   columnKey="amount_usd"
                   label="Target ARR"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="numeric"
                   sortState={sortState}
                   onChangeSort={setSortState}
                   numericRange={arrRange}
                   onChangeNumericRange={setArrRange}
-                  numericPlaceholder={{ min: '0', max: 'Max' }}
+                  numericPlaceholder={{ min: "0", max: "Max" }}
                   numericPresets={[
-                    { label: '$100K+', min: 100000 },
-                    { label: '$250K+', min: 250000 },
-                    { label: '$500K+', min: 500000 },
-                    { label: '$1M+', min: 1000000 },
+                    { label: "$100K+", min: 100000 },
+                    { label: "$250K+", min: 250000 },
+                    { label: "$500K+", min: 500000 },
+                    { label: "$1M+", min: 1000000 },
                   ]}
                 />
                 <ColumnFilterHeader
                   columnKey="probability"
                   label="Prob %"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="numeric"
                   sortState={sortState}
                   onChangeSort={setSortState}
                   numericRange={probRange}
                   onChangeNumericRange={setProbRange}
-                  numericPlaceholder={{ min: '0', max: '100' }}
+                  numericPlaceholder={{ min: "0", max: "100" }}
                   numericPresets={[
-                    { label: '≥ 75%', min: 75 },
-                    { label: '50%+', min: 50 },
-                    { label: '< 50%', max: 49 },
+                    { label: "≥ 75%", min: 75 },
+                    { label: "50%+", min: 50 },
+                    { label: "< 50%", max: 49 },
                   ]}
                 />
                 <ColumnFilterHeader
                   columnKey="expected_close"
                   label="Close Qtr"
-                  thClassName={densityCls.headerCell}
+                  thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
                   onChangeSort={setSortState}
@@ -850,255 +958,306 @@ export function CustomersView({
                   selectedValues={closeQtrFilter}
                   onChangeSelectedValues={setCloseQtrFilter}
                 />
-                <th className={`${densityCls.headerCell} text-right`}>Actions</th>
+                <th className={`${densityCls.headerCell} text-right whitespace-nowrap`}>Actions</th>
               </tr>
             </thead>
             {filteredAndSortedCustomers.length === 0 ? (
               <tbody>
                 <tr>
-                  <td colSpan={12} className="p-10 text-center space-y-2.5 text-xs">
+                  <td colSpan={15} className="p-10 text-center space-y-2.5 text-xs">
                     <div className="font-medium text-slate-700">
-                      No enterprise accounts match the active column filters.
+                      No enterprise accounts match the active filters.
                     </div>
                     <button
                       type="button"
-                      onClick={clearAllFilters}
+                      onClick={() => {
+                        clearAllFilters();
+                        setF500QuickOnly(false);
+                        setUsListedQuickOnly(false);
+                        setBestFitQuickOnly(false);
+                        setUsListedFilter(null);
+                        setCategoryFilter(null);
+                      }}
                       className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md font-medium"
                     >
-                      Reset Column Filters
+                      Reset All Filters
                     </button>
                   </td>
                 </tr>
               </tbody>
             ) : (
               <tbody className={`divide-y divide-slate-100 tabular-nums ${densityCls.rowText}`}>
-                {filteredAndSortedCustomers.map((c) => (
-                  <tr
-                    key={c.id}
-                    onClick={() => onSelectContact(c.id)}
-                    className="hover:bg-slate-50/90 cursor-pointer transition-colors"
-                  >
-                    <td className={densityCls.bodyCell}>
-                      <div className="font-medium text-slate-900 flex items-center gap-1.5">
-                        {c.organization}
-                        {c.fortune_500 && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded font-medium">
-                            F500
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {c.buyer_persona} · {c.tier || 'Tier I'}
-                      </div>
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        disabled={!canEdit}
-                        aria-label={`Sector for ${c.organization}`}
-                        value={c.industry || ''}
-                        placeholder="Sector..."
-                        onChange={(e) => onUpdateContact(c.id, { industry: e.target.value })}
-                        className="w-32 text-xs bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1.5 py-1 text-slate-700 focus:outline-none disabled:opacity-70"
-                      />
-                    </td>
-                    <td className={densityCls.bodyCell}>
-                      <div className="font-medium text-slate-800">{c.full_name}</div>
-                      <div className="text-[11px] text-slate-500">{c.title}</div>
-                    </td>
-                    <td className={densityCls.bodyCell}>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${getRegionBadgeStyle(
-                          c.region
-                        )}`}
-                      >
-                        {c.region}
-                      </span>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{c.location}</div>
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        disabled={!canEdit}
-                        aria-label={`ICP Score for ${c.organization}`}
-                        value={c.icp_score ?? 0}
-                        onChange={(e) =>
-                          onUpdateContact(c.id, {
-                            icp_score: Math.min(100, Math.max(0, Number(e.target.value))),
-                          })
-                        }
-                        className="w-14 text-xs font-semibold text-emerald-700 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1.5 py-1 focus:outline-none disabled:opacity-70"
-                      />
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <select
-                        value={c.stage}
-                        disabled={!canEdit}
-                        onChange={(e) => {
-                          const nextStage = e.target.value;
-                          const defaultProb =
-                            nextStage === '7 Closed Won'
-                              ? 100
-                              : nextStage === '6 Commercial / Contracting'
-                              ? 75
-                              : nextStage === '5 Internal Review Pending'
-                              ? 50
-                              : nextStage === '4 Decisionmaker buy in'
-                              ? 30
-                              : nextStage === '2 Qualified'
-                              ? 20
-                              : 0;
-                          onUpdateContact(c.id, { stage: nextStage, probability: defaultProb });
-                        }}
-                        className={`text-[11px] font-medium rounded-full px-2.5 py-1 border cursor-pointer focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed ${getStageBadgeStyle(
-                          c.stage
-                        )}`}
-                      >
-                        {CUSTOMER_STAGES.filter((s) => s !== 'All').map((st) => (
-                          <option key={st} value={st} className="bg-white text-slate-800">
-                            {st}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <select
-                        value={c.owner_id || ''}
-                        disabled={!canEdit}
-                        aria-label={`Deal owner for ${c.organization}`}
-                        onChange={(e) => {
-                          const selected = activeUsers.find((u) => u.id === e.target.value);
-                          if (!selected) return;
-                          onUpdateContact(c.id, {
-                            owner_id: selected.id,
-                            owner_email: selected.email,
-                            owner: selected.full_name,
-                          });
-                        }}
-                        className="text-xs bg-slate-50 border border-[#E2E8F0] hover:border-slate-300 focus:border-slate-500 rounded px-2 py-1 text-slate-800 focus:outline-none disabled:opacity-70"
-                      >
-                        {!activeUsers.some((u) => u.id === c.owner_id) && (
-                          <option value={c.owner_id || ''}>
-                            {c.owner ? `${c.owner} (Reassign)` : 'Assign Active Owner'}
-                          </option>
-                        )}
-                        {activeUsers.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.full_name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className={densityCls.bodyCell}>
-                      <DeliveryStatusBadge
-                        status={c.delivery_status}
-                        openedAt={c.opened_at}
-                        openedDurationSec={c.opened_duration_sec}
-                        bouncedReason={c.bounced_reason}
-                      />
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-0.5 font-medium text-slate-900">
-                        <span className="text-slate-400">$</span>
+                {filteredAndSortedCustomers.map((c) => {
+                  const usListed = getUsListedValue(c);
+                  const fitCategory = getFitCategoryValue(c);
+                  const personaGroup = getBuyerPersonaGroup(c.buyer_persona);
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => onSelectContact(c.id)}
+                      className="group hover:bg-slate-50/90 cursor-pointer transition-colors"
+                    >
+                      {/* Sticky Col 1: Company, Tier (L) & Fortune 500 (J) */}
+                      <td className={`${densityCls.bodyCell} sticky left-0 z-10 bg-white group-hover:bg-slate-50 sticky-col-surface min-w-[200px] border-r border-[#E2E8F0]`}>
+                        <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                          <span className="truncate max-w-[140px]">{c.organization}</span>
+                          {c.fortune_500 && (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded font-mono shrink-0">
+                              F500
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          {c.tier || "Tier I"}
+                        </div>
+                      </td>
+
+                      {/* Sticky Col 2: Executive Name (A-B), Email (D) & Job Title (G) */}
+                      <td className={`${densityCls.bodyCell} sticky left-[200px] z-10 bg-white group-hover:bg-slate-50 sticky-col-surface min-w-[230px] border-r border-[#E2E8F0]`}>
+                        <div className="font-medium text-slate-800">{c.full_name}</div>
+                        <div className="text-[11px] text-slate-500 truncate max-w-[215px]" title={c.title}>
+                          {c.title || "Executive"}
+                        </div>
+                      </td>
+
+                      {/* Col E: Sector */}
+                      <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
                         <input
-                          type="number"
-                          step={25000}
+                          type="text"
                           disabled={!canEdit}
-                          aria-label={`Target ARR for ${c.organization}`}
-                          value={c.amount_usd || 0}
-                          onChange={(e) =>
-                            onUpdateContact(c.id, { amount_usd: Number(e.target.value) })
-                          }
-                          className="w-20 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1 py-0.5 focus:outline-none disabled:opacity-70"
+                          aria-label={`Sector for ${c.organization}`}
+                          value={c.industry || ""}
+                          placeholder="Sector..."
+                          onChange={(e) => onUpdateContact(c.id, { industry: e.target.value })}
+                          className="w-36 text-xs bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1.5 py-1 text-slate-700 focus:outline-none disabled:opacity-70"
                         />
-                      </div>
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-0.5 text-slate-700">
+                      </td>
+
+                      {/* Col F: Region & Location */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`}>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${getRegionBadgeStyle(
+                            c.region
+                          )}`}
+                        >
+                          {c.region}
+                        </span>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{c.location}</div>
+                      </td>
+
+                      {/* Cols H & I: Buyer Persona & ICP Tag */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[10.5px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {c.buyer_persona || "Exec"}
+                          </span>
+                          <span className="text-[11px] text-slate-600">{personaGroup}</span>
+                        </div>
+                      </td>
+
+                      {/* Col K: US Listed */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`}>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10.5px] font-mono border ${
+                            usListed === "Yes"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {usListed}
+                        </span>
+                      </td>
+
+                      {/* Col M: Category (Best-fit / Adjacent / Other) */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`}>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10.5px] font-mono border ${
+                            fitCategory === "Best-fit"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : fitCategory === "Adjacent"
+                              ? "bg-sky-50 text-sky-700 border-sky-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}
+                        >
+                          {fitCategory}
+                        </span>
+                      </td>
+
+                      {/* ICP Score */}
+                      <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
                         <input
                           type="number"
                           min={0}
                           max={100}
-                          step={5}
                           disabled={!canEdit}
-                          aria-label={`Probability for ${c.organization}`}
-                          value={c.probability ?? 0}
+                          aria-label={`ICP Score for ${c.organization}`}
+                          value={c.icp_score ?? 0}
                           onChange={(e) =>
                             onUpdateContact(c.id, {
-                              probability: Math.min(100, Math.max(0, Number(e.target.value))),
+                              icp_score: Math.min(100, Math.max(0, Number(e.target.value))),
                             })
                           }
-                          className="w-12 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1 py-0.5 focus:outline-none disabled:opacity-70"
+                          className="w-14 text-xs font-mono font-semibold text-emerald-700 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 focus:bg-white rounded px-1.5 py-1 focus:outline-none disabled:opacity-70"
                         />
-                        <span className="text-slate-400">%</span>
-                      </div>
-                    </td>
-                    <td className={densityCls.bodyCell} onClick={(e) => e.stopPropagation()}>
-                      <select
-                        value={c.expected_close || 'Q2 2027'}
-                        disabled={!canEdit}
-                        onChange={(e) =>
-                          onUpdateContact(c.id, { expected_close: e.target.value as Quarter })
-                        }
-                        className="text-xs bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 rounded px-1.5 py-1 text-slate-700 focus:outline-none disabled:opacity-70"
-                      >
-                        {QUARTERS.map((q) => (
-                          <option key={q} value={q}>
-                            {q}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className={`${densityCls.bodyCell} text-right`}>
-                      <div className="inline-flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenAccountIntelligence(c);
+                      </td>
+
+                      {/* Stage (Inline) */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={c.stage}
+                          disabled={!canEdit}
+                          onChange={(e) => {
+                            const nextStage = e.target.value;
+                            const defaultProb =
+                              nextStage === "7 Closed Won"
+                                ? 100
+                                : nextStage === "6 Commercial / Contracting"
+                                ? 75
+                                : nextStage === "5 Internal Review Pending"
+                                ? 50
+                                : nextStage === "4 Decisionmaker buy in"
+                                ? 30
+                                : nextStage === "2 Qualified"
+                                ? 20
+                                : 0;
+                            onUpdateContact(c.id, { stage: nextStage, probability: defaultProb });
                           }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100 whitespace-nowrap"
-                          title={`Open AI Customer Intelligence Dossier for ${c.organization}`}
+                          className={`text-[11px] font-medium rounded-full px-2.5 py-1 border cursor-pointer focus:outline-none disabled:opacity-70 disabled:cursor-not-allowed ${getStageBadgeStyle(
+                            c.stage
+                          )}`}
                         >
-                          <Sparkles size={11} />
-                          Account Intelligence
-                        </button>
-                        <span className="inline-flex items-center gap-1">
+                          {CUSTOMER_STAGES.filter((s) => s !== "All").map((st) => (
+                            <option key={st} value={st} className="bg-white text-slate-800">
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Deal Owner */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={c.owner_id || ""}
+                          disabled={!canEdit}
+                          onChange={(e) => {
+                            const u = activeUsers.find((usr) => usr.id === e.target.value);
+                            if (u) {
+                              onUpdateContact(c.id, {
+                                owner_id: u.id,
+                                owner_email: u.email,
+                                owner: u.full_name,
+                              });
+                            }
+                          }}
+                          className="text-xs bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-slate-700 focus:outline-none disabled:opacity-70"
+                        >
+                          {activeUsers.map((u) => (
+                            <option key={u.id} value={u.id} className="bg-white text-slate-800">
+                              {u.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Delivery Status */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`}>
+                        <span className="text-[11px] text-slate-500">
+                          {getDeliveryFilterLabel(getDeliveryFilterKey(c))}
+                        </span>
+                      </td>
+
+                      {/* Target ARR */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 font-mono text-xs text-slate-800">
+                          <span className="text-slate-400">$</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={25000}
+                            disabled={!canEdit}
+                            value={c.amount_usd || 0}
+                            onChange={(e) =>
+                              onUpdateContact(c.id, { amount_usd: Math.max(0, Number(e.target.value)) })
+                            }
+                            className="w-20 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 rounded px-1 py-0.5 focus:outline-none"
+                          />
+                        </div>
+                      </td>
+
+                      {/* Prob % */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-0.5 font-mono text-xs text-slate-700">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            disabled={!canEdit}
+                            value={c.probability ?? 0}
+                            onChange={(e) =>
+                              onUpdateContact(c.id, {
+                                probability: Math.min(100, Math.max(0, Number(e.target.value))),
+                              })
+                            }
+                            className="w-11 bg-transparent border border-transparent hover:border-slate-200 focus:border-slate-400 rounded px-1 py-0.5 focus:outline-none"
+                          />
+                          <span className="text-slate-400">%</span>
+                        </div>
+                      </td>
+
+                      {/* Close Qtr */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={c.expected_close || "Q2 2027"}
+                          disabled={!canEdit}
+                          onChange={(e) => onUpdateContact(c.id, { expected_close: e.target.value })}
+                          className="text-xs bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-slate-700 focus:outline-none"
+                        >
+                          {["Q1 2027", "Q2 2027", "Q3 2027", "Q4 2027", "Q1 2028"].map((qtr) => (
+                            <option key={qtr} value={qtr} className="bg-white text-slate-800">
+                              {qtr}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Actions */}
+                      <td className={`${densityCls.bodyCell} text-right whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center gap-1.5">
                           <button
-                          type="button"
-                          disabled={!canSendCampaigns}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onComposeEmail(c);
-                          }}
-                          title={!canSendCampaigns ? 'Requires can_send_campaigns permission' : undefined}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-700 bg-white border border-slate-200 rounded hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                        >
-                          <Mail size={12} />
-                          Email
-                        </button>
+                            type="button"
+                            onClick={() => onSelectContact(c.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-[#E2E8F0] bg-white hover:bg-slate-50 text-indigo-700"
+                          >
+                            <Sparkles size={11} />
+                            Account Intelligence
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onComposeEmail(c)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-[#E2E8F0] bg-white hover:bg-slate-50 text-slate-700"
+                          >
+                            <Mail size={11} />
+                            Email
+                          </button>
                           {canEdit && onDeleteContact && (
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
+                              onClick={() => {
                                 if (window.confirm(`Delete ${c.full_name} (${c.organization})?`)) {
                                   onDeleteContact(c.id);
                                 }
                               }}
                               title="Delete account"
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded"
                             >
                               <Trash2 size={13} />
                             </button>
                           )}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             )}
           </table>
