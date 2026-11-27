@@ -315,7 +315,7 @@ function ScaleWorkspace({
   const [hoveredRailItem, setHoveredRailItem] = useState<{ label: string; top: number } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
-    return localStorage.getItem("fortifai_scale_theme") === "dark" ? "dark" : "light";
+    return localStorage.getItem("fortifai_scale_theme") === "light" ? "light" : "dark";
   });
 
   useEffect(() => {
