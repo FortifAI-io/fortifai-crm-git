@@ -213,7 +213,7 @@ export function CustomersView({
         customers.map((c) => getDeliveryFilterKey(c)),
         getDeliveryFilterLabel
       ),
-      closeQtrs: buildOptions(customers.map((c) => c.expected_close || 'Q2 2027')),
+      closeQtrs: buildOptions(customers.map((c) => c.expected_close || '')),
     };
   }, [customers]);
 
@@ -305,7 +305,7 @@ export function CustomersView({
       if (!matchesNumeric(c.probability ?? 0, probRange)) {
         return false;
       }
-      if (closeQtrFilter !== null && !closeQtrFilter.includes(c.expected_close || 'Q2 2027')) {
+      if (closeQtrFilter !== null && !closeQtrFilter.includes(c.expected_close || '')) {
         return false;
       }
       if (f500QuickOnly && !c.fortune_500) return false;
@@ -350,7 +350,7 @@ export function CustomersView({
         case 'fit_category':
           return getFitCategoryValue(a).localeCompare(getFitCategoryValue(b)) * dir;
         case 'expected_close':
-          return (a.expected_close || 'Q2 2027').localeCompare(b.expected_close || 'Q2 2027') * dir;
+          return (a.expected_close || '').localeCompare(b.expected_close || '') * dir;
         default:
           return 0;
       }
@@ -693,9 +693,7 @@ export function CustomersView({
             type="button"
             onClick={() => setF500QuickOnly((p) => !p)}
             className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
-              f500QuickOnly
-                ? "bg-[#0D1520] text-white border-[#0D1520]"
-                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+              f500QuickOnly ? "!bg-amber-500 !text-slate-950 !border-amber-400 font-semibold" : "bg-[var(--bg-subtle)] text-[var(--tx-muted)] border-[var(--border-subtle)] hover:text-[var(--tx-primary)]"
             }`}
           >
             Fortune 500
@@ -704,9 +702,7 @@ export function CustomersView({
             type="button"
             onClick={() => setUsListedQuickOnly((p) => !p)}
             className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
-              usListedQuickOnly
-                ? "bg-[#0D1520] text-white border-[#0D1520]"
-                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+              usListedQuickOnly ? "!bg-sky-500 !text-white !border-sky-400 font-semibold" : "bg-[var(--bg-subtle)] text-[var(--tx-muted)] border-[var(--border-subtle)] hover:text-[var(--tx-primary)]"
             }`}
           >
             US Listed
@@ -715,9 +711,7 @@ export function CustomersView({
             type="button"
             onClick={() => setBestFitQuickOnly((p) => !p)}
             className={`px-2.5 py-1.5 rounded-md border font-medium transition-colors whitespace-nowrap ${
-              bestFitQuickOnly
-                ? "bg-[#0D1520] text-white border-[#0D1520]"
-                : "bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100"
+              bestFitQuickOnly ? "!bg-emerald-500 !text-slate-950 !border-emerald-400 font-semibold" : "bg-[var(--bg-subtle)] text-[var(--tx-muted)] border-[var(--border-subtle)] hover:text-[var(--tx-primary)]"
             }`}
           >
             Best-fit
@@ -1213,6 +1207,7 @@ export function CustomersView({
                           onChange={(e) => onUpdateContact(c.id, { expected_close: e.target.value })}
                           className="text-xs bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-slate-700 focus:outline-none"
                         >
+                          <option value="" className="bg-white text-slate-500">—</option>
                           {["Q1 2027", "Q2 2027", "Q3 2027", "Q4 2027", "Q1 2028"].map((qtr) => (
                             <option key={qtr} value={qtr} className="bg-white text-slate-800">
                               {qtr}
