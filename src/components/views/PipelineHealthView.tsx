@@ -666,14 +666,7 @@ export function PipelineHealthView({
                               : "bg-[var(--bg-canvas)] border-[var(--border-subtle)] hover:border-sky-400/50"
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-1.5">
-                            <span className="text-[12px] font-semibold text-[var(--tx-primary)] truncate">
-                              {deal.organization}
-                            </span>
-                            <span className="text-[11px] font-mono font-semibold text-sky-400 shrink-0">
-                              {formatMillions(deal.amount_usd || 0)}
-                            </span>
-                          </div>
+                          
                           {/* Pipeline Distribution by Owner (Total ARR vs Weighted ARR) */}
       {(() => {
         const ownerMap = new Map<string, { owner: string; totalArr: number; weightedArr: number; dealCount: number }>();
