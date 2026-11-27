@@ -401,14 +401,19 @@ export function PipelineHealthView({
             </span>
           </div>
           {canConfigureRules && (
-            <button
-              type="button"
-              onClick={onOpenSettingsRules}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
-            >
-              <Sliders size={11} className="text-sky-400" />
-              Configure Benchmarks &amp; Formulas
-            </button>
+            <div className="relative group inline-flex items-center">
+              <button
+                type="button"
+                onClick={onOpenSettingsRules}
+                aria-label="Configure Benchmarks & Formulas"
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-sky-400 hover:border-sky-400/60 hover:bg-sky-500/10 transition-colors cursor-pointer"
+              >
+                <Sliders size={14} />
+              </button>
+              <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1.5 z-50 px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-lg text-[11px] font-medium text-[var(--tx-primary)] whitespace-nowrap">
+                Configure Benchmarks &amp; Formulas
+              </div>
+            </div>
           )}
         </div>
 
@@ -533,17 +538,22 @@ export function PipelineHealthView({
             
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 text-[11.5px]">
-            <span className="inline-flex items-center gap-1 font-medium text-sky-400">
-              <Sparkles size={12} />
-              What-If Simulator:
-            </span>
-            <label className="inline-flex items-center gap-1.5 text-[var(--tx-muted)]">
-              <span>Add Tier I Deals:</span>
-              <select
+          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+            <div className="relative group flex items-center">
+              <span
+                aria-label="What-If Simulator: Add Tier I Deals"
+                className="h-6 w-6 inline-flex items-center justify-center rounded-md text-sky-400 hover:bg-sky-500/10 transition-colors cursor-default"
+              >
+                <Sparkles size={13} />
+              </span>
+              <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1.5 z-50 px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-lg text-[11px] font-medium text-[var(--tx-primary)] whitespace-nowrap">
+                What-If Simulator · Add Tier I Deals
+              </div>
+            </div>
+            <select
                 value={simExtraDeals}
                 onChange={(e) => setSimExtraDeals(Number(e.target.value))}
-                className="bg-[var(--bg-canvas)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-[var(--tx-primary)] font-mono"
+                className="bg-[var(--bg-canvas)] border border-[var(--border-subtle)] rounded-md px-2 py-1 text-[11px] font-mono text-[var(--tx-primary)] focus:outline-none focus:border-sky-400 cursor-pointer"
               >
                 {[0, 2, 4, 6, 10, 15, 25].map((n) => (
                   <option key={n} value={n}>
@@ -551,16 +561,6 @@ export function PipelineHealthView({
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="inline-flex items-center gap-1.5 text-[var(--tx-muted)] cursor-pointer pl-2 border-l border-[var(--border-subtle)]">
-              <input
-                type="checkbox"
-                checked={simRescueStale}
-                onChange={(e) => setSimRescueStale(e.target.checked)}
-                className="rounded border-slate-600"
-              />
-              <span>Rescue &gt;{rules.staleSlaDays}d Stale Deals</span>
-            </label>
           </div>
         </div>
 
