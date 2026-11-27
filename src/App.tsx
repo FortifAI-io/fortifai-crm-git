@@ -292,9 +292,7 @@ function setExplicitCloseQtr(id: string, qtr: string) {
 }
 function applyExplicitCloseQtrs(list: Contact[]): Contact[] {
   const map = getExplicitCloseQtrMap();
-  return list.map((c) =>
-    c.contact_type === "customer" ? { ...c, expected_close: map[c.id] || "" } : c
-  );
+  return list;
 }
 
 function ScaleWorkspace({
@@ -320,14 +318,14 @@ function ScaleWorkspace({
     let migrated = loaded;
     try {
       if (!localStorage.getItem("fortifai_cleared_qtr_v1")) {
-        migrated = loaded.map((c) => c.contact_type === "customer" ? { ...c, expected_close: "" } : c);
+        migrated = loaded.map((c) => c.contact_type === "customer" ? { ...c, expected_close: (raw as any).expected_close || (raw as any).custom_fields?.expected_close || (raw as any).custom_fields?.close_qtr || "" } : c);
         localStorage.setItem("fortifai_cleared_qtr_v1", "1");
       }
     } catch {}
     const cleaned = migrated.filter(
       (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
     );
-    return applyExplicitCloseQtrs(normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users)).map((c) =>
+    return normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users).map((c) =>
       c.contact_type === "customer"
         ? {
             ...c,
@@ -668,7 +666,7 @@ function ScaleWorkspace({
         res.users && res.users.length > 0 ? normalizeCrmUsers(res.users) : null;
       if (normalizedUsers) setCrmUsers(normalizedUsers);
       if (res.contacts && res.contacts.length > 0) {
-        setContacts(applyExplicitCloseQtrs(normalizeContacts(res.contacts, normalizedUsers || crmUsers)));
+        setContacts(normalizeContacts(res.contacts, normalizedUsers || crmUsers));
       }
       if (res.customFields && res.customFields.length > 0) setCustomFields(res.customFields);
       if (res.telemetry && res.telemetry.length > 0) setTelemetry(res.telemetry);
@@ -2794,7 +2792,7 @@ function ScaleWorkspace({
         res.users && res.users.length > 0 ? normalizeCrmUsers(res.users) : crmUsers;
       if (res.users && res.users.length > 0) setCrmUsers(normalizedUsers);
       if (res.contacts && res.contacts.length > 0) {
-        setContacts(applyExplicitCloseQtrs(normalizeContacts(res.contacts, normalizedUsers)));
+        setContacts(normalizeContacts(res.contacts, normalizedUsers));
       }
       if (res.customFields && res.customFields.length > 0) setCustomFields(res.customFields);
       if (res.telemetry && res.telemetry.length > 0) setTelemetry(res.telemetry);
