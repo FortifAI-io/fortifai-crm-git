@@ -1,24 +1,26 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
   Eye,
+  KeyRound,
+  Mail,
+  Send,
   Shield,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserPlus,
   UserX,
 } from 'lucide-react';
 import { useRbac } from '../../context/RbacContext';
-import { CmsText } from '../CmsText';
 import type { CrmUser, UserPermissions, UserRole } from '../../types/crm';
 import { ALLOWED_AUTH_DOMAINS, PERMISSION_LABELS, ROLE_PRESETS } from '../../data/seedData';
 
 interface AdminRbacViewProps {
   crmUsers: CrmUser[];
   currentUser: CrmUser;
-  onResendInvite?: (user: CrmUser) => void;
-  onDeleteUser?: (user: CrmUser) => void;
   onInviteUser: (payload: {
     email: string;
     full_name: string;
@@ -26,18 +28,41 @@ interface AdminRbacViewProps {
     role: UserRole;
     permissions: UserPermissions;
   }) => void;
+  onResendInvite?: (user: CrmUser) => void;
+  onDeleteUser?: (user: CrmUser) => void;
+  onRemoveUserFromState?: (email: string) => void;
+  onKeepOnlyVarun?: () => void;
   onUpdateUserRole: (userId: string, role: UserRole) => void;
   onTogglePermission: (userId: string, permKey: keyof UserPermissions) => void;
   onToggleUserActive: (userId: string) => void;
   onSwitchPreviewUser: (user: CrmUser) => void;
 }
 
+const LEGACY_MOCK_EMAILS = new Set([
+  'mike@fortifai.io',
+  'dave@fortifai.io',
+  'arun@fortifai.io',
+  'chandra@fortifai.io',
+  'alex@fortifai.io',
+  'sarah@fortifai.io',
+]);
+
+function getPermLabelText(key: keyof UserPermissions): string {
+  const raw = (PERMISSION_LABELS as Record<string, unknown>)[key];
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object' && 'label' in raw) {
+    return String((raw as { label: unknown }).label);
+  }
+  return key.replace(/^can_/, '').replace(/_/g, ' ');
+}
+
 export function AdminRbacView({
   crmUsers,
   currentUser,
   onInviteUser,
-  onResendInvite,
   onDeleteUser,
+  onRemoveUserFromState,
+  onKeepOnlyVarun,
   onUpdateUserRole,
   onTogglePermission,
   onToggleUserActive,
@@ -51,6 +76,55 @@ export function AdminRbacView({
     ...ROLE_PRESETS.sales_lead.permissions,
   });
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [statusBanner, setStatusBanner] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busyEmail, setBusyEmail] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  const fetchAdminToken = async (): Promise<string> => {
+    const sr = await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: currentUser.email }),
+    });
+    const sj = (await sr.json().catch(() => ({}))) as { token?: string };
+    return sj.token || '';
+  };
+
+  // Auto-purge legacy seeded mock accounts from Supabase & local state on mount
+  useEffect(() => {
+    const hasLegacy = crmUsers.some((u) => {
+      const em = u.email.toLowerCase();
+      return (
+        LEGACY_MOCK_EMAILS.has(em) &&
+        !window.localStorage.getItem('fortifai_reinvited_' + em)
+      );
+    });
+    if (!hasLegacy) return;
+
+    crmUsers.forEach((u) => {
+      const em = u.email.toLowerCase();
+      if (LEGACY_MOCK_EMAILS.has(em) && !window.localStorage.getItem('fortifai_reinvited_' + em)) {
+        onRemoveUserFromState?.(em);
+      }
+    });
+
+    if (currentUser.role === 'super_admin') {
+      void (async () => {
+        try {
+          const token = await fetchAdminToken();
+          await fetch('/api/admin/purge-stale-users', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ keepOnlyVarun: false }),
+          });
+        } catch {}
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crmUsers.length]);
 
   const handleInviteRoleChange = (role: UserRole) => {
     setInviteRole(role);
@@ -60,25 +134,26 @@ export function AdminRbacView({
   const handleSubmitInvite = (e: FormEvent) => {
     e.preventDefault();
     setInviteError(null);
+    setStatusBanner(null);
     const email = inviteEmail.trim().toLowerCase();
     const fullName = inviteName.trim();
 
     if (!fullName) {
-      setInviteError('Please enter the team member’s full name.');
+      setInviteError('Enter the team member’s full name.');
       return;
     }
-
     if (!ALLOWED_AUTH_DOMAINS.some((d) => email.endsWith(d))) {
-      setInviteError(
-        'Only @fortifai.io or @tryfortifai.us email addresses can be invited to Fortifai Scale.'
-      );
+      setInviteError('Only @fortifai.io or @tryfortifai.us email addresses can be invited.');
+      return;
+    }
+    if (crmUsers.some((u) => u.email.toLowerCase() === email)) {
+      setInviteError(`${email} is already in the user list below. Click "Resend Invite" on their row.`);
       return;
     }
 
-    if (crmUsers.some((u) => u.email.toLowerCase() === email)) {
-      setInviteError(`${email} is already provisioned in crm_users.`);
-      return;
-    }
+    try {
+      window.localStorage.setItem('fortifai_reinvited_' + email, '1');
+    } catch {}
 
     onInviteUser({
       email,
@@ -88,443 +163,505 @@ export function AdminRbacView({
       permissions: { ...invitePerms },
     });
 
+    setStatusBanner({
+      ok: true,
+      text: `Provisioned ${email} and dispatched invitation email from support@fortifai.io with a 7-day Set Password link.`,
+    });
     setInviteEmail('');
     setInviteName('');
     setInviteRole('sales_lead');
     setInvitePerms({ ...ROLE_PRESETS.sales_lead.permissions });
   };
 
-  const activeCount = crmUsers.filter((u) => u.is_active).length;
+  const handleDirectResendInvite = async (u: CrmUser, copyLinkToo = false) => {
+    setBusyEmail(u.email);
+    setStatusBanner(null);
+    try {
+      const token = await fetchAdminToken();
+      const resp = await fetch('/api/admin/send-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          email: u.email,
+          full_name: u.full_name,
+          role: u.role,
+          permissions: u.permissions,
+        }),
+      });
+      const out = (await resp.json().catch(() => ({}))) as {
+        ok?: boolean;
+        setupLink?: string;
+        error?: string;
+      };
+      if (!resp.ok || !out.ok) {
+        setStatusBanner({
+          ok: false,
+          text: out.error || `Failed to send invite to ${u.email}.`,
+        });
+        return;
+      }
+      if (copyLinkToo && out.setupLink) {
+        await navigator.clipboard.writeText(out.setupLink);
+        setStatusBanner({
+          ok: true,
+          text: `Copied 7-day Set Password link for ${u.email} to clipboard (and emailed via support@fortifai.io).`,
+        });
+      } else {
+        setStatusBanner({
+          ok: true,
+          text: `Invitation email resent to ${u.email} from Fortifai Support <support@fortifai.io>.`,
+        });
+      }
+    } catch {
+      setStatusBanner({ ok: false, text: `Network error sending invite to ${u.email}.` });
+    } finally {
+      setBusyEmail(null);
+    }
+  };
+
+  const handleDirectRemoveUser = async (u: CrmUser) => {
+    const em = u.email.toLowerCase();
+    if (em === 'varun@fortifai.io') return;
+    if (!window.confirm(`Permanently remove ${u.email} from Fortifai Scale?`)) return;
+
+    setBusyEmail(u.email);
+    try {
+      window.localStorage.removeItem('fortifai_reinvited_' + em);
+    } catch {}
+    onRemoveUserFromState?.(em);
+    onDeleteUser?.(u);
+
+    try {
+      const token = await fetchAdminToken();
+      await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ email: em }),
+      });
+      setStatusBanner({ ok: true, text: `Removed ${u.email} from Fortifai Scale and Supabase.` });
+    } catch {
+      setStatusBanner({ ok: false, text: `Removed ${u.email} locally, but server delete failed.` });
+    } finally {
+      setBusyEmail(null);
+    }
+  };
+
+  const handleKeepOnlyVarunClick = async () => {
+    if (
+      !window.confirm(
+        'Remove all users except varun@fortifai.io from Fortifai Scale and Supabase?'
+      )
+    ) {
+      return;
+    }
+    setBusyEmail('__purge__');
+    onKeepOnlyVarun?.();
+    try {
+      const token = await fetchAdminToken();
+      await fetch('/api/admin/purge-stale-users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ keepOnlyVarun: true }),
+      });
+      setStatusBanner({
+        ok: true,
+        text: 'Purged all non-admin/stale accounts. Only varun@fortifai.io remains.',
+      });
+    } catch {
+      setStatusBanner({ ok: false, text: 'Purged locally; check server connection for Supabase.' });
+    } finally {
+      setBusyEmail(null);
+    }
+  };
+
+  const visibleUsers = crmUsers.filter((u) => {
+    const em = u.email.toLowerCase();
+    if (LEGACY_MOCK_EMAILS.has(em) && !window.localStorage.getItem('fortifai_reinvited_' + em)) {
+      return false;
+    }
+    return true;
+  });
+
+  const roleKeys = Object.keys(ROLE_PRESETS) as UserRole[];
+  const permKeys = Object.keys(ROLE_PRESETS.super_admin.permissions) as Array<keyof UserPermissions>;
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] w-full mx-auto">
-      {/* Header Summary Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 tabular-nums">
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
-          <div className="text-xs text-slate-500 font-medium">Provisioned Team Members</div>
-          <div className="text-2xl font-semibold text-slate-900 mt-1">{crmUsers.length}</div>
-          <div className="text-[11px] text-emerald-600 mt-1">
-            {activeCount} Active · {crmUsers.length - activeCount} Deactivated
+    <div className="p-6 max-w-[1280px] mx-auto space-y-5 text-xs">
+      {/* Header & Purge Controls */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center">
+            <ShieldCheck size={18} />
           </div>
-        </div>
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
-          <div className="text-xs text-slate-500 font-medium">Allowed Auth Domains</div>
-          <div className="text-sm font-semibold text-slate-900 mt-2 font-mono">
-            @fortifai.io · @tryfortifai.us
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Matched against Supabase <span className="font-mono">crm_users</span>
-          </div>
-        </div>
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
-          <div className="text-xs text-slate-500 font-medium">Active Session Principal</div>
-          <div className="text-sm font-semibold text-slate-900 mt-2 truncate">
-            {currentUser.email}
-          </div>
-          <div className="text-[11px] text-indigo-600 mt-1 font-mono">{currentUser.role}</div>
-        </div>
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-4">
-          <div className="text-xs text-slate-500 font-medium">Role-Based Access Rules</div>
-          <div className="text-sm font-semibold text-slate-900 mt-2">
-            8 Granular Capabilities
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Dynamically hides tabs, enforces sender IDs &amp; actions
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Role Switcher Preview ("Simulate View As") */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <Eye size={16} className="text-indigo-600 shrink-0" />
           <div>
-            <div className="text-xs font-semibold text-slate-900">
-              Simulate View As (Test Exact UI for Any Role)
-            </div>
-            <div className="text-[11px] text-slate-500">
-              Toggle any role preset to preview sidebar visibility, read-only fields, hidden schema/composer controls, and Ask Scale scope.
-            </div>
+            <h2 className="text-sm font-semibold text-[var(--tx-primary)]">
+              Users, Invitations &amp; Role-Based Access Control
+            </h2>
+            <p className="text-[11px] text-[var(--tx-muted)]">
+              Provision @fortifai.io &amp; @tryfortifai.us accounts · Invites dispatch from{' '}
+              <span className="font-mono">support@fortifai.io</span> with a self-service Set Password link
+            </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {(Object.keys(ROLE_PRESETS) as UserRole[]).map((roleKey) => {
-            const isSelected = isSimulating
-              ? simulatedRole === roleKey
-              : currentUser.role === roleKey;
-            return (
-              <button
-                key={roleKey}
-                type="button"
-                onClick={() => {
-                  if (isSelected && isSimulating) {
-                    exitSimulation();
-                  } else {
-                    simulateRole(roleKey);
-                  }
-                }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap ${
-                  isSelected
-                    ? 'bg-[#0D1520] text-white border-[#0D1520]'
-                    : 'bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
-                }`}
-                title={ROLE_PRESETS[roleKey].description}
-              >
-                <Eye size={12} />
-                {ROLE_PRESETS[roleKey].label}
-              </button>
-            );
-          })}
+
+        <div className="flex items-center gap-2">
           {isSimulating && (
             <button
               type="button"
               onClick={exitSimulation}
-              className="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 whitespace-nowrap"
+              className="px-3 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium hover:bg-amber-500/25"
             >
-              Exit Simulation
+              Exit Role Preview ({simulatedRole})
+            </button>
+          )}
+          {currentUser.role === 'super_admin' && visibleUsers.length > 1 && (
+            <button
+              type="button"
+              disabled={busyEmail === '__purge__'}
+              onClick={handleKeepOnlyVarunClick}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 font-medium transition-colors"
+            >
+              <Trash2 size={13} />
+              Keep Only varun@fortifai.io
             </button>
           )}
         </div>
       </div>
 
+      {statusBanner && (
+        <div
+          className={`p-3 rounded-lg border flex items-center justify-between gap-2 ${
+            statusBanner.ok
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+          }`}
+        >
+          <span className="inline-flex items-center gap-2">
+            {statusBanner.ok ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+            {statusBanner.text}
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatusBanner(null)}
+            className="text-[11px] underline opacity-80 hover:opacity-100"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Invite New Team Member */}
       <form
         onSubmit={handleSubmitInvite}
-        className="bg-white border border-[#E2E8F0] rounded-lg p-5 space-y-4"
+        className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-5 space-y-4"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-2">
-            <UserPlus size={16} className="text-slate-700" />
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                <CmsText
-                  id="admin.invite.title"
-                  defaultValue="Invite Team Member (crm_users)"
-                  section="Admin & Settings"
-                />
-              </h2>
-              <p className="text-xs text-slate-400">
-                <CmsText
-                  id="admin.invite.subtitle"
-                  defaultValue="Grant access to verified @fortifai.io or @tryfortifai.us team members with preset or custom permissions"
-                  section="Admin & Settings"
-                />
-              </p>
-            </div>
+        <div className="flex items-center justify-between">
+          <div className="font-semibold text-sm text-[var(--tx-primary)] flex items-center gap-2">
+            <UserPlus size={15} className="text-sky-400" />
+            Invite Workspace Team Member
           </div>
-          <span className="text-[11px] text-slate-500">
-            Administered by <strong className="text-slate-800">{currentUser.email}</strong>
+          <span className="text-[11px] text-[var(--tx-muted)]">
+            Sends 7-day password setup link via <span className="font-mono">support@fortifai.io</span>
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div>
-            <label className="block text-slate-600 font-medium mb-1">Full Name</label>
-            <input
-              type="text"
-              required
-              value={inviteName}
-              onChange={(e) => setInviteName(e.target.value)}
-              placeholder="e.g. Priya Sharma"
-              className="w-full px-3 py-2 border border-[#E2E8F0] rounded-md text-slate-900 focus:outline-none focus:border-slate-400"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-600 font-medium mb-1">
-              Fortifai Email (@fortifai.io / @tryfortifai.us)
-            </label>
-            <input
-              type="email"
-              required
-              value={inviteEmail}
-              onChange={(e) => {
-                setInviteEmail(e.target.value);
-                setInviteError(null);
-              }}
-              placeholder="priya@fortifai.io"
-              className="w-full px-3 py-2 border border-[#E2E8F0] rounded-md text-slate-900 focus:outline-none focus:border-slate-400"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-600 font-medium mb-1">Preset Role</label>
-            <select
-              value={inviteRole}
-              onChange={(e) => handleInviteRoleChange(e.target.value as UserRole)}
-              className="w-full px-3 py-2 border border-[#E2E8F0] rounded-md bg-white text-slate-900 font-medium focus:outline-none focus:border-slate-400"
-            >
-              {(Object.keys(ROLE_PRESETS) as UserRole[]).map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_PRESETS[r].label} ({r})
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <input
+            type="text"
+            value={inviteName}
+            onChange={(e) => setInviteName(e.target.value)}
+            placeholder="Full name (e.g. Fortifai Marketing)"
+            className="md:col-span-4 px-3 py-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+          />
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="name@fortifai.io"
+            className="md:col-span-4 px-3 py-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+          />
+          <select
+            value={inviteRole}
+            onChange={(e) => handleInviteRoleChange(e.target.value as UserRole)}
+            className="md:col-span-2 px-3 py-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)]"
+          >
+            {roleKeys.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="md:col-span-2 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-md bg-sky-500 text-slate-950 font-semibold hover:bg-sky-400 transition-colors"
+          >
+            <Send size={13} />
+            Send Invite
+          </button>
         </div>
 
-        <div className="bg-slate-50 border border-slate-200/80 rounded-md p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-700">Granular Permissions for Invite</span>
-            <span className="text-[11px] text-slate-500">
-              {ROLE_PRESETS[inviteRole].description}
-            </span>
+        {inviteError && (
+          <div className="p-2.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center gap-2">
+            <AlertCircle size={14} />
+            <span>{inviteError}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-xs">
-            {PERMISSION_LABELS.map((perm) => (
-              <label
-                key={perm.key}
-                className="flex items-center gap-2 px-2.5 py-2 rounded bg-white border border-slate-200 cursor-pointer hover:border-slate-300"
+        )}
+      </form>
+
+      {/* Active Workspace Users Table */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-[var(--border-subtle)] flex items-center justify-between">
+          <div className="font-semibold text-sm text-[var(--tx-primary)] flex items-center gap-2">
+            <Shield size={15} className="text-sky-400" />
+            Provisioned Workspace Accounts ({visibleUsers.length})
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[var(--tx-muted)]">Simulate Role:</span>
+            {roleKeys.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => simulateRole(r)}
+                className={`px-2 py-0.5 rounded border text-[10.5px] font-mono transition-colors ${
+                  isSimulating && simulatedRole === r
+                    ? 'bg-sky-500 text-slate-950 border-sky-400 font-semibold'
+                    : 'border-[var(--border-subtle)] text-[var(--tx-secondary)] hover:bg-[var(--bg-subtle)]'
+                }`}
               >
-                <input
-                  type="checkbox"
-                  checked={invitePerms[perm.key]}
-                  onChange={(e) =>
-                    setInvitePerms((prev) => ({
-                      ...prev,
-                      [perm.key]: e.target.checked,
-                    }))
-                  }
-                  className="rounded border-slate-300 text-[#0D1520]"
-                />
-                <span className="text-[11px] font-medium text-slate-700 truncate">
-                  {perm.short}
-                </span>
-              </label>
+                {r}
+              </button>
             ))}
           </div>
         </div>
 
-        {inviteError && (
-          <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-            <AlertCircle size={14} className="shrink-0" />
-            <span>{inviteError}</span>
-          </div>
-        )}
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-[#0D1520] rounded-md hover:bg-slate-800 transition-colors whitespace-nowrap"
-          >
-            <UserPlus size={14} />
-            Invite &amp; Provision Access
-          </button>
-        </div>
-      </form>
-
-      {/* Team Access Matrix Table */}
-      <div className="bg-white border border-[#E2E8F0] rounded-lg overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Shield size={16} className="text-slate-700" />
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Team RBAC Permissions Matrix
-              </h2>
-              <p className="text-xs text-slate-400">
-                Toggle preset roles, individual capability checkboxes, or active status. Use
-                &ldquo;Preview as User&rdquo; to test dynamic tab &amp; action restrictions.
-              </p>
-            </div>
-          </div>
-        </div>
-
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50/80 border-b border-[#E2E8F0] text-[11px] font-semibold tracking-wider text-slate-500">
-                <th className="py-3 px-4">Team Member</th>
-                <th className="py-3 px-4">Preset Role</th>
-                {PERMISSION_LABELS.map((perm) => (
-                  <th
-                    key={perm.key}
-                    className="py-3 px-2.5 text-center whitespace-nowrap"
-                    title={perm.label}
-                  >
-                    {perm.short}
-                  </th>
-                ))}
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+          <table className="w-full text-left border-collapse whitespace-nowrap">
+            <thead className="bg-[var(--bg-subtle)] border-b border-[var(--border-subtle)] text-[11px] uppercase tracking-wider text-[var(--tx-muted)]">
+              <tr>
+                <th className="py-2.5 px-4">Team Member</th>
+                <th className="py-2.5 px-4">Email</th>
+                <th className="py-2.5 px-4">Role</th>
+                <th className="py-2.5 px-4">Status</th>
+                <th className="py-2.5 px-4">Permissions</th>
+                <th className="py-2.5 px-4 text-right">Invitation &amp; Access Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {crmUsers.map((user) => {
-                const isPrimaryOwner = user.email.toLowerCase() === 'varun@fortifai.io';
-                const isCurrent = user.id === currentUser.id;
+            <tbody className="divide-y divide-[var(--border-subtle)]">
+              {visibleUsers.map((u) => {
+                const isPrimaryOwner = u.email.toLowerCase() === 'varun@fortifai.io';
+                const isExpanded = expandedUserId === u.id;
+                const enabledCount = permKeys.filter((k) => Boolean(u.permissions?.[k])).length;
+
                 return (
-                  <tr
-                    key={user.id}
-                    className={`transition-colors ${
-                      !user.is_active ? 'bg-slate-50/70 opacity-65' : 'hover:bg-slate-50/90'
-                    }`}
-                  >
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900">{user.full_name}</span>
-                        {isCurrent && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-medium">
-                            You
+                  <>
+                    <tr key={u.id} className="hover:bg-[var(--bg-subtle)]/60 transition-colors">
+                      <td className="py-2.5 px-4 font-semibold text-[var(--tx-primary)]">
+                        {u.full_name}
+                        {isPrimaryOwner && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 text-[10px]">
+                            Owner
                           </span>
                         )}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono">{user.email}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <select
-                        value={user.role}
-                        disabled={isPrimaryOwner}
-                        onChange={(e) => onUpdateUserRole(user.id, e.target.value as UserRole)}
-                        className="bg-white border border-[#E2E8F0] rounded px-2 py-1 text-xs font-medium text-slate-800 disabled:bg-slate-100 disabled:text-slate-500"
-                      >
-                        {(Object.keys(ROLE_PRESETS) as UserRole[]).map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    {PERMISSION_LABELS.map((perm) => (
-                      <td key={perm.key} className="py-3 px-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          aria-label={`${perm.label} for ${user.email}`}
-                          checked={Boolean(user.permissions[perm.key])}
-                          disabled={isPrimaryOwner && perm.key === 'can_manage_users'}
-                          onChange={() => onTogglePermission(user.id, perm.key)}
-                          className="h-4 w-4 rounded border-slate-300 text-[#0D1520] cursor-pointer disabled:opacity-50"
-                        />
                       </td>
-                    ))}
-                    <td className="py-3 px-4 text-center">
-                      {user.is_active ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
-                          <CheckCircle2 size={11} />
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
-                          <UserX size={11} />
-                          Deactivated
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        {!isCurrent && user.is_active && (
-                          <button
-                            type="button"
-                            onClick={() => onSwitchPreviewUser(user)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 whitespace-nowrap"
-                            title="Switch active session to test this user's RBAC permissions"
-                          >
-                            <Eye size={11} />
-                            Preview as User
-                          </button>
+                      <td className="py-2.5 px-4 font-mono text-[var(--tx-secondary)]">
+                        {u.email}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <select
+                          value={u.role}
+                          disabled={isPrimaryOwner}
+                          onChange={(e) => onUpdateUserRole(u.id, e.target.value as UserRole)}
+                          className="px-2.5 py-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)] disabled:opacity-60"
+                        >
+                          {roleKeys.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        {u.is_active ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px]">
+                            <UserCheck size={11} />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 text-[11px]">
+                            <UserX size={11} />
+                            Revoked
+                          </span>
                         )}
+                      </td>
+                      <td className="py-2.5 px-4">
                         <button
                           type="button"
-                          disabled={isPrimaryOwner}
-                          onClick={() => onToggleUserActive(user.id)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium border whitespace-nowrap disabled:opacity-40 ${
-                            user.is_active
-                              ? 'text-rose-700 bg-white border-rose-200 hover:bg-rose-50'
-                              : 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
-                          }`}
+                          onClick={() => setExpandedUserId(isExpanded ? null : u.id)}
+                          className="px-2.5 py-1 rounded border border-[var(--border-subtle)] hover:bg-[var(--bg-subtle)] text-[var(--tx-secondary)] tabular-nums"
                         >
-                          {user.is_active ? (
-                            <>
-                              <UserX size={11} />
-                              Deactivate
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck size={11} />
-                              Activate
-                            </>
-                          )}
+                          {enabledCount}/{permKeys.length} enabled · {isExpanded ? 'Hide' : 'Edit'}
                         </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-2.5 px-4 text-right space-x-1.5">
+                        {!isPrimaryOwner && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busyEmail === u.email}
+                              onClick={() => handleDirectResendInvite(u, false)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 font-medium transition-colors disabled:opacity-50"
+                              title="Resend invite email from support@fortifai.io with 7-day Set Password link"
+                            >
+                              <Mail size={12} />
+                              {busyEmail === u.email ? 'Sending...' : 'Resend Invite'}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={busyEmail === u.email}
+                              onClick={() => handleDirectResendInvite(u, true)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 font-medium transition-colors disabled:opacity-50"
+                              title="Copy 7-day Set Password link directly to clipboard"
+                            >
+                              <Copy size={12} />
+                              Copy Setup Link
+                            </button>
+                          </>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => onSwitchPreviewUser(u)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[var(--border-subtle)] text-[var(--tx-secondary)] hover:bg-[var(--bg-subtle)]"
+                          title="Preview workspace as this user"
+                        >
+                          <Eye size={12} />
+                          Preview
+                        </button>
+
+                        {!isPrimaryOwner && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => onToggleUserActive(u.id)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                            >
+                              {u.is_active ? 'Deactivate' : 'Activate'}
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={busyEmail === u.email}
+                              onClick={() => handleDirectRemoveUser(u)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                              title="Permanently remove user"
+                            >
+                              <Trash2 size={12} />
+                              Remove
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+
+                    {isExpanded && (
+                      <tr key={`${u.id}_perms`} className="bg-[var(--bg-subtle)]/40">
+                        <td colSpan={6} className="px-6 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {permKeys.map((pk) => {
+                              const active = Boolean(u.permissions?.[pk]);
+                              return (
+                                <label
+                                  key={pk}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border cursor-pointer ${
+                                    active
+                                      ? 'border-sky-500/40 bg-sky-500/10 text-[var(--tx-primary)]'
+                                      : 'border-[var(--border-subtle)] text-[var(--tx-muted)]'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={active}
+                                    disabled={isPrimaryOwner}
+                                    onChange={() => onTogglePermission(u.id, pk)}
+                                    className="rounded"
+                                  />
+                                  <span>{getPermLabelText(pk)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>
           </table>
         </div>
-
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center gap-2 text-[11px] text-slate-500">
-          <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
-          <span>
-            Primary Super Admin (<span className="font-mono text-slate-700">varun@fortifai.io</span>
-            ) retains permanent <span className="font-mono">can_manage_users</span> protection to
-            prevent accidental lockout.
-          </span>
-        </div>
       </div>
-    
-      {/* Workspace Password Control (Self + Super Admin Reset) */}
+
+      {/* Direct Password Override Panel */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-5 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[var(--tx-primary)]">
-              Workspace Password Management
-            </h3>
-            <p className="text-xs text-[var(--tx-muted)] mt-0.5">
-              Set or rotate salted scrypt password hashes in <span className="font-mono">crm_users</span>. Super Admins can reset any team member&apos;s password.
-            </p>
-          </div>
+        <div className="flex items-center gap-2 font-semibold text-sm text-[var(--tx-primary)]">
+          <KeyRound size={15} className="text-sky-400" />
+          Direct Password Set / Reset
         </div>
+        <p className="text-[11px] text-[var(--tx-muted)]">
+          Invited users automatically receive a link to set their own password. You can also set or rotate any account&apos;s password directly below.
+        </p>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
-            const targetEmail = String(fd.get("targetEmail") || currentUser.email).trim().toLowerCase();
-            const newPassword = String(fd.get("newPassword") || "");
+            const targetEmail = String(fd.get('targetEmail') || currentUser.email)
+              .trim()
+              .toLowerCase();
+            const newPassword = String(fd.get('newPassword') || '');
             if (newPassword.length < 8) {
-              alert("Password must be at least 8 characters.");
+              setStatusBanner({ ok: false, text: 'Password must be at least 8 characters.' });
               return;
             }
-            const sessRes = await fetch("/api/auth/session", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email: currentUser.email }),
-            });
-            const sessJson = (await sessRes.json()) as { token?: string };
-            const resp = await fetch("/api/auth/set-password", {
-              method: "POST",
+            const token = await fetchAdminToken();
+            const resp = await fetch('/api/auth/set-password', {
+              method: 'POST',
               headers: {
-                "Content-Type": "application/json",
-                ...(sessJson.token ? { Authorization: `Bearer ${sessJson.token}` } : {}),
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({ targetEmail, newPassword }),
             });
-            const out = (await resp.json()) as { ok?: boolean; error?: string };
+            const out = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
             if (!resp.ok || !out.ok) {
-              alert(out.error || "Unable to update password.");
+              setStatusBanner({ ok: false, text: out.error || 'Unable to update password.' });
             } else {
-              alert(`Password updated for ${targetEmail}`);
+              setStatusBanner({ ok: true, text: `Password updated for ${targetEmail}.` });
               e.currentTarget.reset();
             }
           }}
-          className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs"
+          className="grid grid-cols-1 sm:grid-cols-12 gap-2.5"
         >
           <select
             name="targetEmail"
             defaultValue={currentUser.email}
-            disabled={currentUser.role !== "super_admin"}
+            disabled={currentUser.role !== 'super_admin'}
             className="sm:col-span-5 px-3 py-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] text-[var(--tx-primary)]"
           >
-            {currentUser.role === "super_admin" ? (
-              crmUsers.map((u) => (
-                <option key={u.id} value={u.email}>
-                  {u.full_name} ({u.email})
-                </option>
-              ))
-            ) : (
-              <option value={currentUser.email}>
-                {currentUser.full_name} ({currentUser.email})
+            {(currentUser.role === 'super_admin' ? visibleUsers : [currentUser]).map((u) => (
+              <option key={u.id} value={u.email}>
+                {u.full_name} ({u.email})
               </option>
-            )}
+            ))}
           </select>
           <input
             type="password"
@@ -542,7 +679,6 @@ export function AdminRbacView({
           </button>
         </form>
       </div>
-
     </div>
   );
 }

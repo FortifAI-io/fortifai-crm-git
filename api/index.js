@@ -2061,6 +2061,45 @@ app.post("/api/auth/accept-invite", async (req, res) => {
     return res.status(500).json({ ok: false, error: msg });
   }
 });
+app.post("/api/admin/purge-stale-users", async (req, res) => {
+  try {
+    const authHeader = String(req.headers.authorization || "");
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const caller = verifySessionToken(bearer);
+    if (!caller || caller.role !== "super_admin") {
+      return res.status(403).json({ ok: false, error: "Only super_admin can purge users." });
+    }
+    const keepOnlyVarun = Boolean((req.body || {}).keepOnlyVarun);
+    const staleEmails = [
+      "mike@fortifai.io",
+      "dave@fortifai.io",
+      "arun@fortifai.io",
+      "chandra@fortifai.io",
+      "alex@fortifai.io",
+      "sarah@fortifai.io"
+    ];
+    const sbAdmin = getSupabaseAdmin();
+    if (sbAdmin) {
+      if (keepOnlyVarun) {
+        try {
+          await sbAdmin.from("opportunities").update({ owner_id: null, owner_email: "varun@fortifai.io" }).neq("owner_email", "varun@fortifai.io");
+        } catch {
+        }
+        await sbAdmin.from("crm_users").delete().neq("email", "varun@fortifai.io");
+      } else {
+        try {
+          await sbAdmin.from("opportunities").update({ owner_id: null, owner_email: "varun@fortifai.io" }).in("owner_email", staleEmails);
+        } catch {
+        }
+        await sbAdmin.from("crm_users").delete().in("email", staleEmails);
+      }
+    }
+    return res.status(200).json({ ok: true, keepOnlyVarun });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Purge failed";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
 app.post("/api/admin/delete-user", async (req, res) => {
   try {
     const authHeader = String(req.headers.authorization || "");
@@ -2075,6 +2114,10 @@ app.post("/api/admin/delete-user", async (req, res) => {
     }
     const sbAdmin = getSupabaseAdmin();
     if (sbAdmin) {
+      try {
+        await sbAdmin.from("opportunities").update({ owner_id: null, owner_email: "varun@fortifai.io" }).eq("owner_email", email);
+      } catch {
+      }
       await sbAdmin.from("crm_users").delete().eq("email", email);
     }
     return res.status(200).json({ ok: true, email });

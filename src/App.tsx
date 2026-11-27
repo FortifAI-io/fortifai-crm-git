@@ -3695,6 +3695,12 @@ function ScaleWorkspace({
 
         {activeTab === 'admin' && perms.can_manage_users && (
           <AdminRbacView
+            onRemoveUserFromState={(email) =>
+              setCrmUsers((prev) => prev.filter((u) => u.email.toLowerCase() !== email.toLowerCase()))
+            }
+            onKeepOnlyVarun={() =>
+              setCrmUsers((prev) => prev.filter((u) => u.email.toLowerCase() === 'varun@fortifai.io'))
+            }
             crmUsers={crmUsers}
             currentUser={currentUser}
             onInviteUser={handleInviteUser}
