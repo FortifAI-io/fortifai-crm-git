@@ -2151,9 +2151,8 @@ function ScaleWorkspace({
       return;
     }
 
-    const testTargetEmail = currentUser.email.trim().toLowerCase().endsWith('@fortifai.io')
-      ? currentUser.email.trim().toLowerCase()
-      : 'varun@fortifai.io';
+    const cleanOwnerEmail = currentUser.email.trim().toLowerCase();
+    const testTargetEmail = cleanOwnerEmail.includes('@') ? cleanOwnerEmail : 'varun@fortifai.io';
 
     const sample =
       activeComposerRecipients[
@@ -3406,6 +3405,7 @@ function ScaleWorkspace({
             onSendTestToMe={handleSendTestToMe}
             renderTemplate={renderEmailTemplate}
             filterResetSeq={compFilterResetSeq}
+            telemetry={accessibleTelemetry}
           />
         )}
 
@@ -3442,6 +3442,7 @@ function ScaleWorkspace({
             onSendTestToMe={handleSendTestToMe}
             renderTemplate={renderEmailTemplate}
             filterResetSeq={compFilterResetSeq}
+            telemetry={accessibleTelemetry}
           />
         )}
 

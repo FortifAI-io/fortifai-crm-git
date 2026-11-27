@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Edit3,
-  Filter,
+  History,
   Link2,
   Lock,
   Mail,
@@ -25,6 +29,7 @@ import type {
   CrmUser,
   CustomFieldDefinition,
   PortalLinkMode,
+  TelemetryEvent,
 } from '../../types/crm';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
 
@@ -58,6 +63,7 @@ interface ComposerViewProps {
   onSendTestToMe: () => void;
   renderTemplate: (tpl: string, contact?: Contact) => string;
   filterResetSeq?: number;
+  telemetry?: TelemetryEvent[];
 }
 
 interface PlaybookPreset {
@@ -248,6 +254,7 @@ export function ComposerView({
   onSendTestToMe,
   renderTemplate,
   filterResetSeq = 0,
+  telemetry = [],
 }: ComposerViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -256,8 +263,12 @@ export function ComposerView({
     [eligibleRecipients, domainScope]
   );
 
-  // Pane 1: Outreach Mode (1-to-1 Direct DM vs Segment Cohort Builder) & Faceted Filters
-  const [outreachMode, setOutreachMode] = useState<'dm' | 'segment'>('segment');
+  // 3-Step Wizard Navigation + Sent Logs Tab
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [viewMode, setViewMode] = useState<'wizard' | 'logs'>('wizard');
+
+  // Step 1: Audience & Filters
+  const [outreachMode, setOutreachMode] = useState<'dm' | 'segment'>('dm');
   const [searchQuery, setSearchQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<string>('All');
   const [sectorFilter, setSectorFilter] = useState<string>('All');
@@ -268,7 +279,7 @@ export function ComposerView({
   const [f500Only, setF500Only] = useState(false);
   const [cooldownDays, setCooldownDays] = useState<number>(0);
 
-  // Pane 2 & 3: AI Personalized Hooks + Per-Recipient VIP Overrides
+  // Step 2 & 3: AI Hooks + Per-Recipient VIP Overrides
   const [activePlaybookId, setActivePlaybookId] = useState<string>('');
   const [aiHooksById, setAiHooksById] = useState<Record<string, string>>({});
   const [generatingAiHooks, setGeneratingAiHooks] = useState(false);
@@ -287,15 +298,19 @@ export function ComposerView({
     setF500Only(false);
     setCooldownDays(0);
     setEditingVipId(null);
+    setViewMode('wizard');
     if (selectedIds.length === 1) {
       setOutreachMode('dm');
-    } else {
+      setStep(2);
+    } else if (selectedIds.length > 1) {
       setOutreachMode('segment');
+      setStep(2);
+    } else {
+      setStep(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainScope, filterResetSeq]);
 
-  // Extract distinct facet values from real database
   const facetOptions = useMemo(() => {
     const regions = new Set<string>();
     const sectors = new Set<string>();
@@ -378,7 +393,53 @@ export function ComposerView({
     [domainRecipients, selectedSet]
   );
 
-  // Smart Quick-Cohort Selectors
+  // Sent Logs derived from telemetry + contacts with sent_at / delivery_status
+  const sentLogs = useMemo(() => {
+    const fromTelemetry = telemetry
+      .filter((t) => {
+        const c = domainRecipients.find((r) => r.id === t.contact_id);
+        return Boolean(c) && ['email_sent', 'email_delivered', 'email_opened', 'email_bounced'].includes(t.event_type);
+      })
+      .map((t) => ({
+        id: t.id,
+        contactName: t.contact_name,
+        organization: t.organization,
+        detail: t.detail,
+        status: t.event_type === 'email_bounced' ? 'Bounced' : 'Sent',
+        sender: t.sender_from || sendFrom,
+        bcc: t.bcc_inbox || '',
+        timestamp: t.timestamp,
+      }));
+
+    const teleContactIds = new Set(telemetry.map((t) => t.contact_id));
+    const fromContacts = domainRecipients
+      .filter(
+        (c) =>
+          !teleContactIds.has(c.id) &&
+          (c.sent_at ||
+            ['sent', 'delivered', 'opened', 'portal_visited', 'replied'].includes(
+              c.delivery_status || ''
+            ))
+      )
+      .map((c) => ({
+        id: `log_${c.id}`,
+        contactName: c.full_name,
+        organization: c.organization,
+        detail: `Status: ${c.delivery_status || 'sent'} (${c.email})`,
+        status:
+          c.delivery_status === 'replied'
+            ? 'Replied'
+            : c.delivery_status === 'opened' || c.email_opened
+            ? 'Opened'
+            : 'Sent',
+        sender: c.owner_email || sendFrom,
+        bcc: '',
+        timestamp: c.sent_at || 'Logged in CRM',
+      }));
+
+    return [...fromTelemetry, ...fromContacts];
+  }, [telemetry, domainRecipients, sendFrom]);
+
   const applyQuickCohort = (
     type: 'hot_signals' | 'active_pipeline' | 'tier1_legal_audit' | 'tier1_finance_proc' | 'uncontacted'
   ) => {
@@ -422,7 +483,6 @@ export function ComposerView({
     setVipBodyOverrides({});
   };
 
-  // Generate AI Dossier-Grounded Hooks via /api/personalize-outreach
   const handleGenerateAiHooks = async () => {
     if (activeRecipients.length === 0 || generatingAiHooks) return;
     setGeneratingAiHooks(true);
@@ -543,7 +603,6 @@ export function ComposerView({
     return text;
   };
 
-  // Live Deliverability Linter
   const sampleForLint =
     activeRecipients[Math.min(previewIdx, Math.max(0, activeRecipients.length - 1))] ||
     filteredRecipients[0];
@@ -574,9 +633,7 @@ export function ComposerView({
   const verifiedSelectedCount = activeRecipients.filter(isExternalVerifiedLive).length;
   const blockedSelectedCount = activeRecipients.length - verifiedSelectedCount;
 
-  const testTargetEmail = currentUser.email.trim().toLowerCase().endsWith('@fortifai.io')
-    ? currentUser.email.trim().toLowerCase()
-    : 'varun@fortifai.io';
+  const ownerPreviewEmail = currentUser.email.trim().toLowerCase();
 
   const playbooks = domainScope === 'investor' ? INVESTOR_PLAYBOOKS : CUSTOMER_PLAYBOOKS;
   const scopedCustomFields = customFields.filter(
@@ -584,134 +641,324 @@ export function ComposerView({
   );
 
   return (
-    <div className="p-4 max-w-[1680px] w-full mx-auto grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+    <div className="p-6 max-w-[1160px] w-full mx-auto space-y-5">
       {/* ===================================================================== */}
-      {/* PANE 1 (LEFT · 4 COLS): DYNAMIC AUDIENCE & SEGMENT BUILDER            */}
+      {/* TOP BAR: 3-STEP WIZARD STEPPER + SENT LOGS SWITCHER                   */}
       {/* ===================================================================== */}
-      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] flex flex-col overflow-hidden">
-        <div className="p-3.5 border-b border-[#E2E8F0] space-y-2.5 bg-slate-50/60">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
-                01 · Target Audience
-              </span>
-              <span className="px-1.5 py-0.5 text-[10px] font-mono bg-white border border-[#E2E8F0] rounded text-slate-800">
-                {activeRecipients.length} selected
-              </span>
+      <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { num: 1 as const, label: 'Step 1 · Select Audience', sub: `${activeRecipients.length} selected` },
+            { num: 2 as const, label: 'Step 2 · Craft AI Message', sub: `${wordCount} words` },
+            { num: 3 as const, label: 'Step 3 · Preview & Dispatch', sub: 'Owner preview + Resend' },
+          ].map((s, idx) => {
+            const isActive = viewMode === 'wizard' && step === s.num;
+            const isDone = viewMode === 'wizard' && step > s.num;
+            return (
+              <div key={s.num} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('wizard');
+                    setStep(s.num);
+                  }}
+                  className={`flex items-center gap-2.5 px-3.5 py-2 rounded-[5px] border text-left transition-colors ${
+                    isActive
+                      ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                      : isDone
+                      ? 'bg-emerald-50/70 text-slate-900 border-emerald-200 hover:bg-emerald-50'
+                      : 'bg-slate-50 text-slate-600 border-[#E2E8F0] hover:bg-slate-100'
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-mono font-semibold ${
+                      isActive
+                        ? 'bg-white text-[#0D1520]'
+                        : isDone
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white text-slate-600 border border-[#E2E8F0]'
+                    }`}
+                  >
+                    {isDone ? <Check size={11} /> : s.num}
+                  </span>
+                  <div>
+                    <div className="text-xs font-semibold leading-tight">{s.label}</div>
+                    <div
+                      className={`text-[10.5px] font-mono ${
+                        isActive ? 'text-slate-300' : 'text-slate-400'
+                      }`}
+                    >
+                      {s.sub}
+                    </div>
+                  </div>
+                </button>
+                {idx < 2 && <ChevronRight size={14} className="text-slate-300 hidden sm:block" />}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Sent Logs Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setViewMode((prev) => (prev === 'logs' ? 'wizard' : 'logs'))}
+          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-[5px] border text-xs font-medium transition-colors ${
+            viewMode === 'logs'
+              ? 'bg-[#0D1520] text-white border-[#0D1520]'
+              : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-50'
+          }`}
+        >
+          <History size={14} />
+          Sent Logs ({sentLogs.length})
+        </button>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* VIEW A: SENT LOGS LEDGER                                              */}
+      {/* ===================================================================== */}
+      {viewMode === 'logs' && (
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Outreach Sent History &amp; Delivery Ledger
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Every dispatched email, owner preview, and Resend delivery status logged in real time.
+              </p>
             </div>
-            {suppressedCount > 0 && (
-              <span
-                title="Passed / Unsubscribed contacts automatically excluded"
-                className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200"
+            <button
+              type="button"
+              onClick={() => setViewMode('wizard')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#0D1520] rounded-[4px] hover:bg-slate-800"
+            >
+              <ArrowLeft size={13} />
+              Back to Outreach Wizard
+            </button>
+          </div>
+
+          {sentLogs.length === 0 ? (
+            <div className="p-12 text-center text-xs text-slate-400 space-y-2">
+              <Mail size={22} className="mx-auto text-slate-300" />
+              <div>No outreach emails logged in this domain yet.</div>
+              <div>Complete Steps 1–3 to send a preview email to yourself or dispatch to recipients.</div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-50 border-b border-[#E2E8F0] text-[10.5px] font-mono uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2.5 px-4">When</th>
+                    <th className="py-2.5 px-4">Recipient</th>
+                    <th className="py-2.5 px-4">Account / Fund</th>
+                    <th className="py-2.5 px-4">Sender</th>
+                    <th className="py-2.5 px-4">Subject / Detail</th>
+                    <th className="py-2.5 px-4">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sentLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50">
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock size={11} />
+                          {log.timestamp}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 font-medium text-slate-900 whitespace-nowrap">
+                        {log.contactName}
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-700 whitespace-nowrap">
+                        {log.organization}
+                      </td>
+                      <td className="py-2.5 px-4 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                        {log.sender}
+                      </td>
+                      <td className="py-2.5 px-4 text-slate-700 max-w-md truncate">
+                        {log.detail}
+                      </td>
+                      <td className="py-2.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10.5px] font-mono border ${
+                            log.status === 'Bounced'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}
+                        >
+                          {log.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* STEP 1 SCREEN: SELECT AUDIENCE                                        */}
+      {/* ===================================================================== */}
+      {viewMode === 'wizard' && step === 1 && (
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Step 1: Choose Your Target Audience
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pick a single executive for a 1-to-1 message, or build a filtered cohort.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {suppressedCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                  <ShieldAlert size={12} />
+                  {suppressedCount} Passed / Unsubscribed excluded
+                </span>
+              )}
+              <button
+                type="button"
+                disabled={activeRecipients.length === 0}
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0D1520] rounded-[5px] hover:bg-slate-800 disabled:opacity-40 transition-colors"
               >
-                <ShieldAlert size={11} />
-                {suppressedCount} suppressed
-              </span>
-            )}
+                Continue to Step 2 ({activeRecipients.length} selected)
+                <ArrowRight size={14} />
+              </button>
+            </div>
           </div>
 
-          {/* 1-to-1 DM vs Segment Cohort Toggle */}
-          <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-100 border border-[#E2E8F0] rounded-[5px]">
-            <button
-              type="button"
-              onClick={() => setOutreachMode('dm')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 text-[11.5px] font-medium rounded-[4px] transition-colors ${
-                outreachMode === 'dm'
-                  ? 'bg-[#0D1520] text-white'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <User size={12} />
-              1-to-1 Direct DM
-            </button>
-            <button
-              type="button"
-              onClick={() => setOutreachMode('segment')}
-              className={`flex items-center justify-center gap-1.5 py-1.5 text-[11.5px] font-medium rounded-[4px] transition-colors ${
-                outreachMode === 'segment'
-                  ? 'bg-[#0D1520] text-white'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Users size={12} />
-              Segment Cohort
-            </button>
+          {/* Mode Toggle + Search */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+            <div className="md:col-span-4 grid grid-cols-2 gap-1 p-1 bg-slate-100 border border-[#E2E8F0] rounded-[5px]">
+              <button
+                type="button"
+                onClick={() => setOutreachMode('dm')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-[4px] transition-colors ${
+                  outreachMode === 'dm'
+                    ? 'bg-[#0D1520] text-white'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <User size={13} />
+                1-to-1 Direct DM
+              </button>
+              <button
+                type="button"
+                onClick={() => setOutreachMode('segment')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-[4px] transition-colors ${
+                  outreachMode === 'segment'
+                    ? 'bg-[#0D1520] text-white'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Users size={13} />
+                Segment Cohort
+              </button>
+            </div>
+
+            <div className="md:col-span-8 relative">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={
+                  outreachMode === 'dm'
+                    ? 'Search by executive name, company, title, or email...'
+                    : 'Filter matching cohort by name, company, or industry...'
+                }
+                className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-[5px] focus:outline-none focus:border-slate-400"
+              />
+            </div>
           </div>
 
-          {/* Instant Search Input */}
-          <div className="relative">
-            <Search
-              size={13}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={
-                outreachMode === 'dm'
-                  ? 'Type executive name, company, or email...'
-                  : 'Filter matching contacts by name, firm, or title...'
-              }
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400"
-            />
-          </div>
-
-          {/* Smart AI Quick-Cohorts (Segment Mode) */}
+          {/* Segment Cohort Filters (only visible when Segment Cohort is selected) */}
           {outreachMode === 'segment' && (
-            <div className="space-y-2 pt-1">
-              <div className="flex flex-wrap gap-1">
-                {domainScope === 'customer' ? (
-                  <>
+            <div className="p-4 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-mono uppercase text-slate-500 mr-1">
+                    Quick Cohorts:
+                  </span>
+                  {domainScope === 'customer' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickCohort('active_pipeline')}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                      >
+                        Engaged Pipeline (Stage 2+)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickCohort('tier1_legal_audit')}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
+                      >
+                        Tier I · CCO/GC &amp; CAE
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickCohort('tier1_finance_proc')}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
+                      >
+                        Tier I · CFO &amp; CPO
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickCohort('hot_signals')}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                      >
+                        Hot Signals (Opened / Portal)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyQuickCohort('uncontacted')}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
+                      >
+                        Uncontacted Queue
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 text-xs">
+                  {filteredRecipients.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => applyQuickCohort('active_pipeline')}
-                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                      onClick={() => {
+                        onChangeSelectedIds(filteredRecipients.map((r) => r.id));
+                        onChangePreviewIdx(0);
+                      }}
+                      className="text-indigo-600 hover:underline font-medium"
                     >
-                      Engaged Pipeline (Stage 2+)
+                      Select All Matching ({filteredRecipients.length})
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => applyQuickCohort('tier1_legal_audit')}
-                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
-                    >
-                      Tier I · CCO/GC &amp; CAE
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyQuickCohort('tier1_finance_proc')}
-                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
-                    >
-                      Tier I · CFO &amp; CPO
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => applyQuickCohort('hot_signals')}
-                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                    >
-                      Hot Signals (Opened / Portal)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => applyQuickCohort('uncontacted')}
-                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
-                    >
-                      Uncontacted Queue
-                    </button>
-                  </>
-                )}
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onChangeSelectedIds([])}
+                    className="text-slate-500 hover:text-slate-800 hover:underline inline-flex items-center gap-1"
+                  >
+                    <RotateCcw size={11} />
+                    Clear
+                  </button>
+                </div>
               </div>
 
-              {/* Faceted Segment Dropdown Grid */}
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
                 <select
                   value={regionFilter}
                   onChange={(e) => setRegionFilter(e.target.value)}
-                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                  aria-label="Filter by Region"
+                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                 >
                   {facetOptions.regions.map((r) => (
                     <option key={r} value={r}>
@@ -723,8 +970,7 @@ export function ComposerView({
                 <select
                   value={personaFilter}
                   onChange={(e) => setPersonaFilter(e.target.value)}
-                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                  aria-label="Filter by Buyer Persona"
+                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                 >
                   {facetOptions.personas.map((p) => (
                     <option key={p} value={p}>
@@ -742,12 +988,11 @@ export function ComposerView({
                     <select
                       value={sectorFilter}
                       onChange={(e) => setSectorFilter(e.target.value)}
-                      className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700 truncate"
-                      aria-label="Filter by Industry Sector"
+                      className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                     >
                       {facetOptions.sectors.map((s) => (
                         <option key={s} value={s}>
-                          {s === 'All' ? 'Sector: All Industries' : s}
+                          {s === 'All' ? 'Sector: All' : s}
                         </option>
                       ))}
                     </select>
@@ -755,8 +1000,7 @@ export function ComposerView({
                     <select
                       value={tierFilter}
                       onChange={(e) => setTierFilter(e.target.value)}
-                      className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                      aria-label="Filter by Tier"
+                      className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                     >
                       <option value="All">Tier: All</option>
                       <option value="Tier I">Tier I</option>
@@ -768,8 +1012,7 @@ export function ComposerView({
                 <select
                   value={stageFilter}
                   onChange={(e) => setStageFilter(e.target.value)}
-                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700 truncate"
-                  aria-label="Filter by Stage"
+                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                 >
                   {facetOptions.stages.map((st) => (
                     <option key={st} value={st}>
@@ -779,310 +1022,258 @@ export function ComposerView({
                 </select>
 
                 <select
-                  value={ownerFilter}
-                  onChange={(e) => setOwnerFilter(e.target.value)}
-                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                  aria-label="Filter by Owner"
-                >
-                  {facetOptions.owners.map((ow) => (
-                    <option key={ow} value={ow}>
-                      {ow === 'All' ? 'Owner: All' : ow}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Fortune 500 + Cooldown Guard Row */}
-              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600 pt-0.5">
-                {domainScope === 'customer' ? (
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={f500Only}
-                      onChange={(e) => setF500Only(e.target.checked)}
-                      className="rounded border-slate-300"
-                    />
-                    <span>Fortune 500 only</span>
-                  </label>
-                ) : (
-                  <span className="text-slate-400">Cooldown guard:</span>
-                )}
-                <select
                   value={cooldownDays}
                   onChange={(e) => setCooldownDays(Number(e.target.value))}
-                  className="px-2 py-0.5 bg-white border border-[#E2E8F0] rounded-[4px] text-[10.5px] text-slate-700"
+                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                 >
                   <option value={0}>Cooldown: Off</option>
-                  <option value={4}>Skip contacted &lt;4d</option>
-                  <option value={7}>Skip contacted &lt;7d</option>
-                  <option value={14}>Skip contacted &lt;14d</option>
+                  <option value={4}>Skip &lt;4d</option>
+                  <option value={7}>Skip &lt;7d</option>
+                  <option value={14}>Skip &lt;14d</option>
                 </select>
               </div>
             </div>
           )}
 
-          {/* Cohort Bulk Action Bar */}
-          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/80">
-            <span className="text-slate-500 font-mono">
-              Showing {filteredRecipients.length} of {domainRecipients.length}
+          {/* Clean Recipient Table */}
+          <div className="border border-[#E2E8F0] rounded-[5px] overflow-hidden">
+            <div className="max-h-[420px] overflow-y-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="sticky top-0 bg-slate-50 border-b border-[#E2E8F0] text-[10.5px] font-mono uppercase text-slate-500">
+                  <tr>
+                    <th className="py-2.5 px-3.5 w-10">Select</th>
+                    <th className="py-2.5 px-3.5">Executive</th>
+                    <th className="py-2.5 px-3.5">Organization</th>
+                    <th className="py-2.5 px-3.5">
+                      {domainScope === 'customer' ? 'Persona & Sector' : 'Priority & Track'}
+                    </th>
+                    <th className="py-2.5 px-3.5">Region</th>
+                    <th className="py-2.5 px-3.5">Stage</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredRecipients.slice(0, 150).map((rec) => {
+                    const isSelected = selectedSet.has(rec.id);
+                    const handleRowClick = () => {
+                      if (outreachMode === 'dm') {
+                        onChangeSelectedIds([rec.id]);
+                        onChangePreviewIdx(0);
+                      } else if (isSelected) {
+                        onChangeSelectedIds(selectedIds.filter((id) => id !== rec.id));
+                      } else {
+                        onChangeSelectedIds([...selectedIds, rec.id]);
+                      }
+                    };
+
+                    return (
+                      <tr
+                        key={rec.id}
+                        onClick={handleRowClick}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected ? 'bg-indigo-50/45 hover:bg-indigo-50/75' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="py-2.5 px-3.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type={outreachMode === 'dm' ? 'radio' : 'checkbox'}
+                            checked={isSelected}
+                            onChange={handleRowClick}
+                            className="rounded border-slate-300 text-[#0D1520] cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          <div className="font-semibold text-slate-900">{rec.full_name}</div>
+                          <div className="text-[11px] text-slate-500 truncate max-w-[240px]">
+                            {rec.title} · <span className="font-mono">{rec.email}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3.5 font-medium text-slate-800">
+                          {rec.organization}
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          {domainScope === 'customer' ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-[#E2E8F0] font-mono text-[10.5px]">
+                                {rec.buyer_persona || 'Executive'}
+                              </span>
+                              <span className="text-slate-500 truncate max-w-[160px]">
+                                {rec.industry}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-[#E2E8F0] font-mono text-[10.5px]">
+                                {rec.priority_tier}
+                              </span>
+                              <span className="text-slate-500 truncate max-w-[160px]">
+                                {rec.execution_wave}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          <span
+                            className={`text-[10.5px] px-1.5 py-0.5 rounded border ${getRegionBadgeStyle(
+                              rec.region
+                            )}`}
+                          >
+                            {rec.region}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          <span
+                            className={`text-[10.5px] px-2 py-0.5 rounded-full border font-medium ${getStageBadgeStyle(
+                              rec.stage
+                            )}`}
+                          >
+                            {rec.stage}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-xs text-slate-500 font-mono">
+              Showing {Math.min(150, filteredRecipients.length)} of {filteredRecipients.length} matching contacts
             </span>
-            <div className="flex items-center gap-2">
-              {outreachMode === 'segment' && filteredRecipients.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChangeSelectedIds(filteredRecipients.map((r) => r.id));
-                    onChangePreviewIdx(0);
-                  }}
-                  className="text-indigo-600 hover:underline font-medium"
-                >
-                  Select Matching ({filteredRecipients.length})
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => onChangeSelectedIds([])}
-                className="text-slate-500 hover:text-slate-800 hover:underline inline-flex items-center gap-0.5"
-              >
-                <RotateCcw size={10} />
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Scrollable Recipient Cards */}
-        <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
-          {filteredRecipients.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400">
-              No active contacts match these filters.
-            </div>
-          ) : (
-            filteredRecipients.slice(0, 150).map((rec) => {
-              const isSelected = selectedSet.has(rec.id);
-              const handleSelect = () => {
-                if (outreachMode === 'dm') {
-                  onChangeSelectedIds([rec.id]);
-                  onChangePreviewIdx(0);
-                } else if (isSelected) {
-                  onChangeSelectedIds(selectedIds.filter((id) => id !== rec.id));
-                } else {
-                  onChangeSelectedIds([...selectedIds, rec.id]);
-                }
-              };
-
-              return (
-                <div
-                  key={rec.id}
-                  onClick={handleSelect}
-                  className={`px-3.5 py-2.5 cursor-pointer transition-colors flex items-start gap-2.5 ${
-                    isSelected
-                      ? 'bg-indigo-50/40 hover:bg-indigo-50/70'
-                      : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <input
-                    type={outreachMode === 'dm' ? 'radio' : 'checkbox'}
-                    checked={isSelected}
-                    onChange={handleSelect}
-                    onClick={(e) => e.stopPropagation()}
-                    className="mt-1 rounded border-slate-300 text-[#0D1520] cursor-pointer"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-[12.5px] font-semibold text-slate-900 truncate">
-                        {rec.full_name}
-                      </span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded border shrink-0 ${getStageBadgeStyle(
-                          rec.stage
-                        )}`}
-                      >
-                        {rec.stage}
-                      </span>
-                    </div>
-                    <div className="text-[11.5px] text-slate-600 truncate">
-                      {rec.organization}
-                      {rec.title ? ` · ${rec.title}` : ''}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded border ${getRegionBadgeStyle(
-                          rec.region
-                        )}`}
-                      >
-                        {rec.region}
-                      </span>
-                      {domainScope === 'customer' ? (
-                        <>
-                          {rec.buyer_persona && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                              {rec.buyer_persona}
-                            </span>
-                          )}
-                          {rec.industry && (
-                            <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
-                              {rec.industry}
-                            </span>
-                          )}
-                          {(rec.amount_usd || 0) > 0 && (
-                            <span className="text-[10px] font-mono text-emerald-700 ml-auto">
-                              {formatCurrency(rec.amount_usd || 0)}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          {rec.priority_tier && (
-                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                              {rec.priority_tier}
-                            </span>
-                          )}
-                          {rec.check_size_label && (
-                            <span className="text-[10px] font-mono text-slate-500">
-                              {rec.check_size_label}
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {aiHooksById[rec.id] && (
-                        <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          AI Hook Ready
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-          {filteredRecipients.length > 150 && (
-            <div className="p-2.5 text-center text-[11px] text-slate-400 bg-slate-50">
-              Showing first 150 matching rows · Use filters or &quot;Select Matching ({filteredRecipients.length})&quot; above
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ===================================================================== */}
-      {/* PANE 2 (CENTER · 4 COLS): AI PLAYBOOKS & MESSAGE STUDIO               */}
-      {/* ===================================================================== */}
-      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] p-4 space-y-3.5">
-        <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
-          <div>
-            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
-              02 · AI Playbook &amp; Message Studio
-            </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              Select a persona angle &amp; synthesize dossier-grounded hooks
-            </div>
-          </div>
-          <button
-            type="button"
-            disabled={activeRecipients.length === 0 || generatingAiHooks}
-            onClick={handleGenerateAiHooks}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11.5px] font-medium text-white bg-[#2E5A8A] rounded-[4px] hover:bg-[#23476E] disabled:opacity-40 transition-colors whitespace-nowrap shrink-0"
-            title="Use Gemini + cached Account Intelligence Dossiers to write tailored 1-sentence openers"
-          >
-            <Sparkles size={12} />
-            {generatingAiHooks
-              ? 'Synthesizing...'
-              : `AI Hooks (${Math.min(activeRecipients.length, 35)})`}
-          </button>
-        </div>
-
-        {aiStatusBanner && (
-          <div className="p-2.5 rounded-[4px] bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] flex items-center justify-between gap-2">
-            <span>{aiStatusBanner}</span>
             <button
               type="button"
-              onClick={() => setAiStatusBanner(null)}
-              className="text-[10px] underline shrink-0"
+              disabled={activeRecipients.length === 0}
+              onClick={() => setStep(2)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-[#0D1520] rounded-[5px] hover:bg-slate-800 disabled:opacity-40 transition-colors"
             >
-              Dismiss
+              Next: Craft AI Message ({activeRecipients.length} selected)
+              <ArrowRight size={14} />
             </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Persona Playbook Selector */}
-        <div>
-          <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-1">
-            GTM Playbook Angle
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {playbooks.map((pb) => (
+      {/* ===================================================================== */}
+      {/* STEP 2 SCREEN: CRAFT AI MESSAGE                                       */}
+      {/* ===================================================================== */}
+      {viewMode === 'wizard' && step === 2 && (
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Step 2: Craft Personalized Message
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pick a Fortifai GTM angle, synthesize dossier-grounded AI opening hooks, and refine copy.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                key={pb.id}
                 type="button"
-                onClick={() => applyPlaybook(pb)}
-                className={`px-2 py-1 text-[11px] font-medium rounded-[4px] border text-left transition-colors ${
-                  activePlaybookId === pb.id
-                    ? 'bg-[#0D1520] text-white border-[#0D1520]'
-                    : 'bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
-                }`}
+                disabled={activeRecipients.length === 0 || generatingAiHooks}
+                onClick={handleGenerateAiHooks}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-[#2E5A8A] rounded-[5px] hover:bg-[#23476E] disabled:opacity-40 transition-colors"
               >
-                {pb.label}
+                <Sparkles size={13} />
+                {generatingAiHooks
+                  ? 'Synthesizing Dossier Hooks...'
+                  : `Generate AI Hooks (${Math.min(activeRecipients.length, 35)})`}
               </button>
-            ))}
+            </div>
           </div>
-        </div>
 
-        {/* Subject Line */}
-        <div>
-          <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-1">
-            Subject Line
-          </label>
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => onChangeSubject(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400 font-medium text-slate-900"
-          />
-        </div>
-
-        {/* Dynamic Variable Tokens */}
-        <div>
-          <div className="text-[10.5px] font-mono uppercase tracking-wider text-slate-400 mb-1">
-            Dynamic Merge Tokens
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {[
-              '{{first_name}}',
-              '{{organization}}',
-              '{{title}}',
-              '{{region}}',
-              '{{custom_hook}}',
-              ...scopedCustomFields.map((cf) => `{{custom.${cf.field_key}}}`),
-            ].map((token) => (
+          {aiStatusBanner && (
+            <div className="p-3 rounded-[5px] bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs flex items-center justify-between gap-2">
+              <span>{aiStatusBanner}</span>
               <button
-                key={token}
                 type="button"
-                onClick={() => insertTokenAtCursor(token)}
-                className="px-1.5 py-0.5 text-[10.5px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-[4px] border border-[#E2E8F0]"
+                onClick={() => setAiStatusBanner(null)}
+                className="text-[11px] underline shrink-0"
               >
-                {token}
+                Dismiss
               </button>
-            ))}
+            </div>
+          )}
+
+          {/* Persona Playbook Presets */}
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-2">
+              Select GTM Playbook Preset
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {playbooks.map((pb) => (
+                <button
+                  key={pb.id}
+                  type="button"
+                  onClick={() => applyPlaybook(pb)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-[5px] border transition-colors ${
+                    activePlaybookId === pb.id
+                      ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                      : 'bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
+                  }`}
+                >
+                  {pb.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Message Body */}
-        <div>
-          <textarea
-            ref={textareaRef}
-            rows={12}
-            value={body}
-            onChange={(e) => onChangeBody(e.target.value)}
-            className="w-full p-3 text-xs leading-relaxed bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400 text-slate-800"
-          />
-        </div>
+          {/* Subject Line */}
+          <div>
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-1.5">
+              Email Subject Line
+            </label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => onChangeSubject(e.target.value)}
+              className="w-full px-3.5 py-2.5 text-xs bg-white border border-[#E2E8F0] rounded-[5px] focus:outline-none focus:border-slate-400 font-medium text-slate-900"
+            />
+          </div>
 
-        {/* Live Deliverability & Executive Scannability Linter */}
-        <div className="p-2.5 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-1.5 text-[11px]">
-          <div className="flex items-center justify-between">
+          {/* Merge Variables */}
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1.5">
+              Click to Insert Dynamic Merge Variable
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                '{{first_name}}',
+                '{{organization}}',
+                '{{title}}',
+                '{{region}}',
+                '{{custom_hook}}',
+                ...scopedCustomFields.map((cf) => `{{custom.${cf.field_key}}}`),
+              ].map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  onClick={() => insertTokenAtCursor(token)}
+                  className="px-2.5 py-1 text-[11px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-[4px] border border-[#E2E8F0]"
+                >
+                  {token}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Spacious Body Editor */}
+          <div>
+            <textarea
+              ref={textareaRef}
+              rows={13}
+              value={body}
+              onChange={(e) => onChangeBody(e.target.value)}
+              className="w-full p-4 text-xs leading-relaxed bg-white border border-[#E2E8F0] rounded-[5px] focus:outline-none focus:border-slate-400 text-slate-800"
+            />
+          </div>
+
+          {/* Deliverability & Length Check */}
+          <div className="p-3 rounded-[5px] bg-slate-50 border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs">
             <span className="font-mono text-slate-500">DELIVERABILITY &amp; LENGTH GUARD</span>
             <span
-              className={`font-mono px-1.5 py-0.5 rounded text-[10.5px] border ${
+              className={`font-mono px-2 py-0.5 rounded text-[11px] border ${
                 wordCount <= 135
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                   : 'bg-amber-50 text-amber-800 border-amber-200'
@@ -1091,287 +1282,306 @@ export function ComposerView({
               {wordCount} words {wordCount <= 135 ? '· Crisp Mobile Fit' : '· Consider Trimming'}
             </span>
           </div>
-          {coldLinkWarning && (
-            <div className="flex items-start gap-1.5 text-amber-800 text-[11px]">
-              <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-600" />
-              <span>
-                Cold <span className="font-mono">1 Lead</span> prospects are selected with a portal URL attached. Switch Portal Link to <strong>None</strong> on the right for highest Fortune 500 inbox placement.
-              </span>
-            </div>
-          )}
+
+          {/* Step Navigation Footer */}
+          <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
+            <button
+              type="button"
+              onClick={() => setStep(1)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-[#E2E8F0] rounded-[5px] hover:bg-slate-50"
+            >
+              <ArrowLeft size={14} />
+              Back to Step 1 · Audience
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-[#0D1520] rounded-[5px] hover:bg-slate-800"
+            >
+              Next: Review, Send Preview &amp; Dispatch
+              <ArrowRight size={14} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ===================================================================== */}
-      {/* PANE 3 (RIGHT · 4 COLS): RECIPIENT INSPECTOR, SENDER & DISPATCH       */}
+      {/* STEP 3 SCREEN: REVIEW, PREVIEW TO OWNER & DISPATCH                    */}
       {/* ===================================================================== */}
-      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] p-4 space-y-3.5 sticky top-14">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
-          <div>
-            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
-              03 · Recipient Inspector &amp; Dispatch
+      {viewMode === 'wizard' && step === 3 && (
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] pb-4">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Step 3: Review Rendered Email, Send Owner Preview &amp; Dispatch
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Inspect the exact email per recipient, send a live preview to your own inbox ({ownerPreviewEmail}), or launch the campaign.
+              </p>
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">
-              Verify rendered copy &amp; sender identity per recipient
-            </div>
+
+            {activeRecipients.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChangePreviewIdx(
+                      previewIdx > 0 ? previewIdx - 1 : activeRecipients.length - 1
+                    )
+                  }
+                  className="p-1.5 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="font-mono text-xs text-slate-700 px-2 tabular-nums">
+                  Recipient {Math.min(previewIdx + 1, activeRecipients.length)} of {activeRecipients.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChangePreviewIdx(
+                      previewIdx + 1 < activeRecipients.length ? previewIdx + 1 : 0
+                    )
+                  }
+                  className="p-1.5 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
 
-          {activeRecipients.length > 0 && (
-            <div className="flex items-center gap-1 text-xs">
-              <button
-                type="button"
-                onClick={() =>
-                  onChangePreviewIdx(
-                    previewIdx > 0 ? previewIdx - 1 : activeRecipients.length - 1
-                  )
-                }
-                className="p-1 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
-                aria-label="Previous recipient"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <span className="font-mono text-[11px] text-slate-700 px-1.5 tabular-nums">
-                {Math.min(previewIdx + 1, activeRecipients.length)} / {activeRecipients.length}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  onChangePreviewIdx(
-                    previewIdx + 1 < activeRecipients.length ? previewIdx + 1 : 0
-                  )
-                }
-                className="p-1 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
-                aria-label="Next recipient"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Sender Identity, Deal Owner Routing, BCC & Portal Link Controls */}
-        <div className="p-3 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-2.5 text-xs">
-          <div>
-            <label className="block text-[10.5px] font-mono uppercase tracking-wider text-slate-500 mb-1">
-              Send From Identity
-            </label>
-            <select
-              value={sendFrom}
-              disabled={useAssignedOwnerSender}
-              onChange={(e) => onChangeSendFrom(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-xs font-medium text-slate-900 disabled:opacity-50"
-            >
-              {senderOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <label className="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer text-[11px]">
-              <input
-                type="checkbox"
-                checked={useAssignedOwnerSender}
-                onChange={(e) => onChangeUseAssignedOwnerSender(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              <span className="font-medium text-slate-700 flex items-center gap-1">
-                <UserCheck size={12} className="text-indigo-600 shrink-0" />
-                Route via Deal Owner
-              </span>
-            </label>
-
-            <label className="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer text-[11px]">
-              <input
-                type="checkbox"
-                checked={bccEnabled}
-                onChange={(e) => onChangeBccEnabled(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              <span className="font-medium text-slate-700 flex items-center gap-1">
-                <Mail size={12} className="text-indigo-600 shrink-0" />
-                BCC Superhuman
-              </span>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
-            <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1">
-              <Link2 size={12} className="text-slate-500" />
-              Portal Link:
-            </span>
-            <select
-              value={effectivePortalMode}
-              onChange={(e) => onChangePortalLinkMode(e.target.value as PortalLinkMode)}
-              className="bg-white border border-[#E2E8F0] rounded-[4px] px-2 py-1 text-[11px] font-medium text-slate-800"
-            >
-              <option value="none">None (Plain 1-to-1 Email)</option>
-              <option value={portalAttachValue}>
-                {domainScope === 'investor'
-                  ? 'Attach investor.fortifai.io'
-                  : 'Attach overview.fortifai.io'}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        {/* Live Rendered Email Preview + Inline Per-VIP Override */}
-        {activeRecipients.length === 0 ? (
-          <div className="py-12 text-center text-xs text-slate-400 border border-dashed border-[#E2E8F0] rounded-[5px]">
-            Select a contact or segment in Pane 1 to inspect rendered email copy.
-          </div>
-        ) : (
-          (() => {
-            const sample =
-              activeRecipients[Math.min(previewIdx, activeRecipients.length - 1)];
-            const resolvedFrom = resolveSenderForContact(sample);
-            const renderedBody = renderFinalPreviewBody(sample);
-            const isEditingThisVip = editingVipId === sample.id;
-
-            return (
-              <div className="space-y-2.5 text-xs">
-                <div className="bg-slate-50 border border-[#E2E8F0] rounded-[5px] p-2.5 space-y-1 text-[11.5px]">
-                  <div className="truncate">
-                    <span className="text-slate-400 font-mono">FROM:</span>{' '}
-                    <span className="font-mono text-slate-800">{resolvedFrom}</span>
-                  </div>
-                  <div className="truncate">
-                    <span className="text-slate-400 font-mono">TO:</span>{' '}
-                    <span className="font-medium text-slate-900">
-                      {sample.full_name} &lt;{sample.email}&gt;
-                    </span>
-                  </div>
-                  {bccEnabled && (
-                    <div className="truncate">
-                      <span className="text-slate-400 font-mono">BCC:</span>{' '}
-                      <span className="font-mono text-indigo-700">{currentUser.email}</span>
-                    </div>
-                  )}
-                  <div className="truncate">
-                    <span className="text-slate-400 font-mono">SUBJ:</span>{' '}
-                    <span className="font-medium text-slate-900">
-                      {renderTemplate(subject, sample)}
-                    </span>
-                  </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left 5 Cols: Sender Settings + Owner Preview Card */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="p-4 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-3 text-xs">
+                <div>
+                  <label className="block text-[10.5px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+                    Send From Identity
+                  </label>
+                  <select
+                    value={sendFrom}
+                    disabled={useAssignedOwnerSender}
+                    onChange={(e) => onChangeSendFrom(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-[4px] text-xs font-medium text-slate-900 disabled:opacity-50"
+                  >
+                    {senderOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                {/* Per-Recipient VIP Override Bar */}
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">
-                    {vipBodyOverrides[sample.id] !== undefined
-                      ? 'Custom VIP override active for this contact'
-                      : aiHooksById[sample.id]
-                      ? 'AI hook injected for ' + sample.organization
-                      : 'Standard template preview'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {vipBodyOverrides[sample.id] !== undefined && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setVipBodyOverrides((prev) => {
-                            const next = { ...prev };
-                            delete next[sample.id];
-                            return next;
-                          });
-                          setEditingVipId(null);
-                        }}
-                        className="text-slate-500 hover:underline"
-                      >
-                        Reset
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isEditingThisVip) {
-                          setEditingVipId(null);
-                        } else {
-                          if (vipBodyOverrides[sample.id] === undefined) {
-                            setVipBodyOverrides((prev) => ({
-                              ...prev,
-                              [sample.id]: renderedBody,
-                            }));
-                          }
-                          setEditingVipId(sample.id);
-                        }
-                      }}
-                      className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-medium"
-                    >
-                      <Edit3 size={11} />
-                      {isEditingThisVip ? 'Done Editing' : 'Customize VIP'}
-                    </button>
-                  </div>
-                </div>
-
-                {isEditingThisVip ? (
-                  <textarea
-                    rows={10}
-                    value={vipBodyOverrides[sample.id] ?? renderedBody}
-                    onChange={(e) =>
-                      setVipBodyOverrides((prev) => ({
-                        ...prev,
-                        [sample.id]: e.target.value,
-                      }))
-                    }
-                    className="w-full p-3 text-xs leading-relaxed bg-white border border-indigo-300 rounded-[5px] focus:outline-none text-slate-800"
+                <label className="flex items-center gap-2.5 p-2.5 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useAssignedOwnerSender}
+                    onChange={(e) => onChangeUseAssignedOwnerSender(e.target.checked)}
+                    className="rounded border-slate-300"
                   />
-                ) : (
-                  <div className="border border-[#E2E8F0] rounded-[5px] p-3.5 bg-white whitespace-pre-wrap leading-relaxed text-slate-800 max-h-[260px] overflow-y-auto">
-                    {renderedBody}
+                  <span className="font-medium text-slate-800 flex items-center gap-1.5">
+                    <UserCheck size={13} className="text-indigo-600" />
+                    Send from each contact&apos;s assigned Deal Owner
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2.5 p-2.5 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bccEnabled}
+                    onChange={(e) => onChangeBccEnabled(e.target.checked)}
+                    className="rounded border-slate-300"
+                  />
+                  <span className="font-medium text-slate-800 flex items-center gap-1.5">
+                    <Mail size={13} className="text-indigo-600" />
+                    BCC my inbox ({currentUser.email}) for Superhuman
+                  </span>
+                </label>
+
+                <div className="pt-1">
+                  <label className="block text-[10.5px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+                    Tracked Portal Link
+                  </label>
+                  <select
+                    value={effectivePortalMode}
+                    onChange={(e) => onChangePortalLinkMode(e.target.value as PortalLinkMode)}
+                    className="w-full bg-white border border-[#E2E8F0] rounded-[4px] px-3 py-2 text-xs font-medium text-slate-800"
+                  >
+                    <option value="none">None (Plain 1-to-1 Email)</option>
+                    <option value={portalAttachValue}>
+                      {domainScope === 'investor'
+                        ? 'Attach Investor Portal (investor.fortifai.io)'
+                        : 'Attach Product Overview (overview.fortifai.io)'}
+                    </option>
+                  </select>
+                </div>
+
+                {coldLinkWarning && (
+                  <div className="p-2.5 rounded-[4px] bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-600" />
+                    <span>
+                      Cold <span className="font-mono">1 Lead</span> prospects selected with a portal link attached. Select <strong>None</strong> above for best inbox placement.
+                    </span>
                   </div>
                 )}
               </div>
-            );
-          })()
-        )}
 
-        {/* Safe Mode Guard Status & Dispatch Buttons */}
-        <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
-              <ShieldCheck size={13} />
-              Safe Mode Guard Active
-            </span>
-            <span className="font-mono">
-              {verifiedSelectedCount} live · {blockedSelectedCount} guarded
-            </span>
+              {/* Send Preview to Logged-In Writer / Owner Box */}
+              <div className="p-4 rounded-[5px] bg-indigo-50/60 border border-indigo-200 space-y-2.5 text-xs">
+                <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                  <Mail size={14} className="text-indigo-600" />
+                  Send Preview Email to Yourself ({currentUser.full_name})
+                </div>
+                <p className="text-[11.5px] text-slate-600 leading-snug">
+                  Sends the exact rendered email shown on the right straight to{' '}
+                  <span className="font-mono font-medium text-slate-900">{ownerPreviewEmail}</span>{' '}
+                  so you can check formatting in Superhuman before dispatching to external accounts.
+                </p>
+                <button
+                  type="button"
+                  disabled={!canSendCampaigns || sendingTest || sendingBatch}
+                  onClick={onSendTestToMe}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-indigo-900 bg-white border border-indigo-300 rounded-[5px] hover:bg-indigo-50 disabled:opacity-40 transition-colors"
+                >
+                  <Mail size={13} />
+                  {sendingTest
+                    ? 'Sending Preview to Your Inbox...'
+                    : `Send Preview Email to ${ownerPreviewEmail}`}
+                </button>
+              </div>
+            </div>
+
+            {/* Right 7 Cols: Spacious Rendered Email Preview */}
+            <div className="lg:col-span-7">
+              {activeRecipients.length === 0 ? (
+                <div className="py-16 text-center text-xs text-slate-400 border border-dashed border-[#E2E8F0] rounded-[5px]">
+                  No recipients selected. Go back to Step 1 to pick a contact or cohort.
+                </div>
+              ) : (
+                (() => {
+                  const sample =
+                    activeRecipients[Math.min(previewIdx, activeRecipients.length - 1)];
+                  const resolvedFrom = resolveSenderForContact(sample);
+                  const renderedBody = renderFinalPreviewBody(sample);
+                  const isEditingThisVip = editingVipId === sample.id;
+
+                  return (
+                    <div className="border border-[#E2E8F0] rounded-[5px] overflow-hidden">
+                      <div className="bg-slate-50 border-b border-[#E2E8F0] p-3.5 space-y-1.5 text-xs">
+                        <div>
+                          <span className="text-slate-400 font-mono mr-2">FROM:</span>
+                          <span className="font-mono text-slate-800">{resolvedFrom}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-mono mr-2">TO:</span>
+                          <span className="font-semibold text-slate-900">
+                            {sample.full_name} &lt;{sample.email}&gt;
+                          </span>
+                        </div>
+                        {bccEnabled && (
+                          <div>
+                            <span className="text-slate-400 font-mono mr-2">BCC:</span>
+                            <span className="font-mono text-indigo-700">{currentUser.email}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
+                          <div>
+                            <span className="text-slate-400 font-mono mr-2">SUBJECT:</span>
+                            <span className="font-semibold text-slate-900">
+                              {renderTemplate(subject, sample)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isEditingThisVip) {
+                                setEditingVipId(null);
+                              } else {
+                                if (vipBodyOverrides[sample.id] === undefined) {
+                                  setVipBodyOverrides((prev) => ({
+                                    ...prev,
+                                    [sample.id]: renderedBody,
+                                  }));
+                                }
+                                setEditingVipId(sample.id);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:underline font-medium shrink-0"
+                          >
+                            <Edit3 size={11} />
+                            {isEditingThisVip ? 'Save VIP Edit' : 'Customize for this recipient'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isEditingThisVip ? (
+                        <textarea
+                          rows={13}
+                          value={vipBodyOverrides[sample.id] ?? renderedBody}
+                          onChange={(e) =>
+                            setVipBodyOverrides((prev) => ({
+                              ...prev,
+                              [sample.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full p-4 text-xs leading-relaxed bg-white focus:outline-none text-slate-800"
+                        />
+                      ) : (
+                        <div className="p-5 bg-white whitespace-pre-wrap text-xs leading-relaxed text-slate-800 min-h-[290px]">
+                          {renderedBody}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
           </div>
 
-          {!canSendCampaigns && (
-            <div className="p-2 rounded-[4px] bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
-              <Lock size={12} className="shrink-0" />
-              <span>Campaign sending requires can_send_campaigns.</span>
+          {/* Safe Mode & Final Dispatch Footer */}
+          <div className="pt-4 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-[#E2E8F0] rounded-[5px] hover:bg-slate-50"
+              >
+                <ArrowLeft size={14} />
+                Back to Step 2 · Message
+              </button>
+
+              <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-emerald-700" />
+                <span>
+                  <strong>{verifiedSelectedCount}</strong> live verified ·{' '}
+                  <strong>{blockedSelectedCount}</strong> Safe Mode guarded
+                </span>
+              </span>
             </div>
-          )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={!canSendCampaigns || sendingTest || sendingBatch}
-              onClick={onSendTestToMe}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11.5px] font-medium text-slate-800 bg-white border border-[#E2E8F0] rounded-[4px] hover:bg-slate-50 disabled:opacity-40 transition-colors"
-            >
-              <Mail size={13} />
-              {sendingTest ? 'Sending...' : `Test (${testTargetEmail.split('@')[0]})`}
-            </button>
-
-            <button
-              type="button"
-              disabled={!canSendCampaigns || sendingBatch || sendingTest || activeRecipients.length === 0}
-              onClick={onSendBatch}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11.5px] font-medium text-white bg-[#0D1520] rounded-[4px] hover:bg-slate-800 disabled:opacity-40 transition-colors"
-            >
-              <Send size={13} />
-              {sendingBatch
-                ? 'Dispatching...'
-                : `Send (${activeRecipients.length})`}
-            </button>
+            {!canSendCampaigns ? (
+              <span className="text-xs text-amber-800 inline-flex items-center gap-1">
+                <Lock size={13} />
+                Requires can_send_campaigns permission
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={sendingBatch || sendingTest || activeRecipients.length === 0}
+                onClick={onSendBatch}
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-semibold text-white bg-[#0D1520] rounded-[5px] hover:bg-slate-800 disabled:opacity-40 transition-colors"
+              >
+                <Send size={14} />
+                {sendingBatch
+                  ? 'Dispatching & Logging...'
+                  : `Send Campaign (${activeRecipients.length} Recipients)`}
+              </button>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

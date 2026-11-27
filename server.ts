@@ -14,7 +14,17 @@ import {
 dotenv.config();
 
 const PORT = Number(process.env.PORT || 3000);
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  crypto
+    .createHash("sha256")
+    .update(
+      (process.env.SUPABASE_SERVICE_ROLE_KEY || "") +
+        ":" +
+        (process.env.RESEND_API_KEY || "") +
+        ":fortifai-scale-v2"
+    )
+    .digest("hex");
 const ALLOWED_EMAIL_DOMAINS = ['@fortifai.io', '@tryfortifai.us'];
 const ALLOWED_PORTALS = new Set(['investor.fortifai.io', 'overview.fortifai.io']);
 const ALLOWED_PORTAL_EVENTS = new Set([

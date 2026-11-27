@@ -1463,7 +1463,9 @@ Return ONLY the compact JSON object (<250 words total).`;
 // _vercel_api_entry.ts
 dotenv.config();
 var PORT = Number(process.env.PORT || 3e3);
-var SESSION_SECRET = process.env.SESSION_SECRET || crypto2.randomBytes(32).toString("hex");
+var SESSION_SECRET = process.env.SESSION_SECRET || crypto2.createHash("sha256").update(
+  (process.env.SUPABASE_SERVICE_ROLE_KEY || "") + ":" + (process.env.RESEND_API_KEY || "") + ":fortifai-scale-v2"
+).digest("hex");
 var ALLOWED_EMAIL_DOMAINS = ["@fortifai.io", "@tryfortifai.us"];
 var ALLOWED_PORTALS = /* @__PURE__ */ new Set(["investor.fortifai.io", "overview.fortifai.io"]);
 var ALLOWED_PORTAL_EVENTS = /* @__PURE__ */ new Set([
