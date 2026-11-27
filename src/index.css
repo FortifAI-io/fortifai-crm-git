@@ -437,3 +437,20 @@ table td > div {
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
+
+html.dark {
+  --bg-canvas: #0B0F17;
+  --bg-surface: #111827;
+  --bg-hover: #1E293B;
+  --border-subtle: #1F2937;
+  --tx-primary: #F8FAFC;
+  --tx-muted: #94A3B8;
+}
+html:not(.dark) {
+  --bg-canvas: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-hover: #F1F5F9;
+  --border-subtle: #E2E8F0;
+  --tx-primary: #0F172A;
+  --tx-muted: #64748B;
+}

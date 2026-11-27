@@ -1,9 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  AlertOctagon,
-  AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Flame,
@@ -13,7 +10,6 @@ import {
   ShieldAlert,
   Sliders,
   Sparkles,
-  TrendingUp,
 } from "lucide-react";
 import {
   Bar,
@@ -28,7 +24,7 @@ import {
 import { useRbac } from "../../context/RbacContext";
 import type { Contact, PipelineAnalytics } from "../../types/crm";
 import type { PipelineHealthRules } from "../../types/pipelineRules";
-import { formatMillions, getStageBadgeStyle } from "../../utils/crmHelpers";
+import { formatMillions } from "../../utils/crmHelpers";
 
 interface PipelineHealthViewProps {
   pipelineAnalytics: PipelineAnalytics;
@@ -59,6 +55,8 @@ interface FailingMetric {
   recommendedAction: string;
 }
 
+const VALID_QUARTERS = ["Q1 2027", "Q2 2027", "Q3 2027", "Q4 2027"] as const;
+
 export function PipelineHealthView({
   pipelineAnalytics,
   contacts,
@@ -76,7 +74,6 @@ export function PipelineHealthView({
   const canSendCampaigns = permissions.can_send_campaigns;
   const canConfigureRules = permissions.can_manage_users || currentUser.role === "super_admin";
 
-  // Interactive AI What-If Simulator toggles
   const [simExtraDeals, setSimExtraDeals] = useState<number>(0);
   const [simRescueStale, setSimRescueStale] = useState<boolean>(false);
   const [showFormulaAudit, setShowFormulaAudit] = useState<boolean>(false);
@@ -84,22 +81,32 @@ export function PipelineHealthView({
   const [dragOverQuarter, setDragOverQuarter] = useState<string | null>(null);
 
   const engine = useMemo(() => {
+    const isNoise = (c: Contact) =>
+      ["stage", "qualified", "total", "grand total"].includes((c.organization || "").trim().toLowerCase()) ||
+      ["acv ($k)", "0", "weighted ($k)"].includes((c.full_name || "").trim().toLowerCase());
+
     const activeDeals = contacts.filter(
       (c) =>
         c.contact_type === "customer" &&
+        !isNoise(c) &&
         !c.omit_from_pipeline &&
         c.stage !== "9 No response"
     );
 
+    const scheduledDeals = activeDeals.filter((d) =>
+      VALID_QUARTERS.includes((d.expected_close || "") as (typeof VALID_QUARTERS)[number])
+    );
+
     const simulatedAddedArr = simExtraDeals * avgAcvAssumption;
-    const totalPipelineArr = pipelineAnalytics.actualPipelineArr + simulatedAddedArr;
+    const basePipelineArr = activeDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
+    const totalPipelineArr = basePipelineArr + simulatedAddedArr;
+
     const qualifiedDeals = activeDeals.filter((d) => !d.stage.startsWith("1 Lead"));
     const qualifiedArr =
       qualifiedDeals.reduce((s, d) => s + (d.amount_usd || 0), 0) + simulatedAddedArr;
     const qualifiedSharePct =
       totalPipelineArr > 0 ? Math.round((qualifiedArr / totalPipelineArr) * 100) : 0;
 
-    // Stale deals based on Settings staleSlaDays
     const staleDeals = activeDeals
       .filter((d) => (d.aging_days || 0) > rules.staleSlaDays)
       .sort((a, b) => (b.aging_days || 0) - (a.aging_days || 0));
@@ -108,7 +115,6 @@ export function PipelineHealthView({
     const staleSharePct =
       totalPipelineArr > 0 ? Math.round((effectiveStaleArr / totalPipelineArr) * 100) : 0;
 
-    // Rep Weighted ARR vs AI Risk-Adjusted ARR (penalizes deals breaching Settings SLA)
     const repWeightedArr =
       activeDeals.reduce((s, d) => {
         const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
@@ -136,8 +142,7 @@ export function PipelineHealthView({
     const weightedAttainmentPct =
       arrTarget2027 > 0 ? Math.round((aiRiskAdjustedArr / arrTarget2027) * 1000) / 10 : 0;
 
-    // Composite Health Score (0-100) driven by Settings weights
-    const covScore = Math.min(100, Math.round((coverageMultActual / coverageMultiple) * 100));
+    const covScore = Math.min(100, Math.round((coverageMultActual / Math.max(0.1, coverageMultiple)) * 100));
     const hygieneScore = Math.max(
       0,
       Math.min(100, Math.round(100 - (staleSharePct / Math.max(1, rules.maxStaleSharePct)) * 50))
@@ -165,7 +170,6 @@ export function PipelineHealthView({
         wSum
     );
 
-    // Horizon Breakdown: Full Year 2027 + Next 2 Quarters (Q1 2027 & Q2 2027)
     const buildHorizon = (
       label: "Full Year 2027" | "Q1 2027" | "Q2 2027",
       subLabel: string,
@@ -175,10 +179,6 @@ export function PipelineHealthView({
     ) => {
       const pipeArr =
         horizonDeals.reduce((s, d) => s + (d.amount_usd || 0), 0) + extraSimArr;
-      const qualArr =
-        horizonDeals
-          .filter((d) => !d.stage.startsWith("1 Lead"))
-          .reduce((s, d) => s + (d.amount_usd || 0), 0) + extraSimArr;
       const aiWtdArr =
         horizonDeals.reduce((s, d) => {
           const baseProb = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
@@ -200,7 +200,6 @@ export function PipelineHealthView({
       const hStaleDeals = horizonDeals.filter((d) => (d.aging_days || 0) > rules.staleSlaDays);
       const hStaleArr = hStaleDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
 
-      // Horizon health status
       const passingCoverage = covMult >= rules.healthyCoverageFloor;
       const passingStale = pipeArr === 0 || (hStaleArr / pipeArr) * 100 <= rules.maxStaleSharePct;
       const status: "HEALTHY" | "AT RISK" | "FAILING" =
@@ -215,7 +214,6 @@ export function PipelineHealthView({
         subLabel,
         targetArr,
         pipeArr,
-        qualArr,
         aiWtdArr,
         reqPipe,
         covMult,
@@ -223,20 +221,19 @@ export function PipelineHealthView({
         dealsNeeded,
         activeCount: horizonDeals.length,
         staleCount: hStaleDeals.length,
-        staleArr: hStaleArr,
         status,
       };
     };
 
     const q1Weight = (rules.quarterWeights["Q1 2027"] || 8.33) / 100;
     const q2Weight = (rules.quarterWeights["Q2 2027"] || 16.67) / 100;
-    const q1Deals = activeDeals.filter((d) => (d.expected_close || "Q2 2027") === "Q1 2027");
-    const q2Deals = activeDeals.filter((d) => (d.expected_close || "Q2 2027") === "Q2 2027");
+    const q1Deals = scheduledDeals.filter((d) => d.expected_close === "Q1 2027");
+    const q2Deals = scheduledDeals.filter((d) => d.expected_close === "Q2 2027");
 
     const horizons = [
       buildHorizon(
         "Full Year 2027",
-        "4 Quarters · Annual Quota",
+        "Annual Quota Horizon",
         arrTarget2027,
         activeDeals,
         simulatedAddedArr
@@ -257,7 +254,6 @@ export function PipelineHealthView({
       ),
     ];
 
-    // Explicitly collect ALL Failing / Breaching Health Metrics
     const failingMetrics: FailingMetric[] = [];
 
     if (coverageMultActual < coverageMultiple) {
@@ -269,8 +265,8 @@ export function PipelineHealthView({
         actualLabel: `${coverageMultActual}x (${formatMillions(totalPipelineArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(requiredPipelineArr)})`,
         gapLabel: `-${formatMillions(coverageGapArr)} (${Math.ceil(coverageGapArr / avgAcvAssumption)} deals)`,
-        rootCause: `Only ${activeDeals.length} active deals in pipeline against a ${formatMillions(arrTarget2027)} FY27 quota.`,
-        recommendedAction: "Convert top Tier I Fortune 500 accounts into Stage 2 Qualified.",
+        rootCause: `${activeDeals.length} active deals in pipeline against ${formatMillions(arrTarget2027)} FY27 quota.`,
+        recommendedAction: "Qualify top Tier I Fortune 500 accounts into Stage 2+.",
       });
     }
 
@@ -287,7 +283,7 @@ export function PipelineHealthView({
           .slice(0, 2)
           .map((d) => `${d.organization} (${d.aging_days}d)`)
           .join(", "),
-        recommendedAction: "Trigger executive re-engagement sequence on stalled accounts.",
+        recommendedAction: "Trigger executive re-engagement on stalled accounts.",
       });
     }
 
@@ -300,29 +296,26 @@ export function PipelineHealthView({
         actualLabel: `${weightedAttainmentPct}% (${formatMillions(aiRiskAdjustedArr)})`,
         benchmarkLabel: `≥ ${rules.minWeightedAttainmentPct}% of FY27 Target`,
         gapLabel: `-${formatMillions(Math.max(0, arrTarget2027 - aiRiskAdjustedArr))} weighted gap`,
-        rootCause: "Heavy concentration in early Stage 2 (20% prob) plus SLA aging discounts.",
-        recommendedAction: "Advance Stage 2 deals (Dynatrace, Nokia, Sony) to Decisionmaker buy-in.",
+        rootCause: "Concentration in Stage 2 (20% prob) plus aging SLA discounts.",
+        recommendedAction: "Advance Stage 2 accounts (Dynatrace, Nokia, Sony) to Decisionmaker buy-in.",
       });
     }
 
     const q1H = horizons[1];
-    if (q1H.covMult < coverageMultiple || q1H.staleCount > 0) {
+    if (q1H.covMult < coverageMultiple) {
       failingMetrics.push({
         id: "fail_q1_horizon",
         severity: q1H.covMult < rules.healthyCoverageFloor ? "critical" : "warning",
         horizon: "Q1 2027",
-        metricName: "Q1 2027 Coverage & Close Velocity",
+        metricName: "Q1 2027 Coverage & Close Readiness",
         actualLabel: `${q1H.covMult}x (${formatMillions(q1H.pipeArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(q1H.reqPipe)})`,
-        gapLabel:
-          q1H.gapArr > 0
-            ? `-${formatMillions(q1H.gapArr)} deficit`
-            : `${q1H.staleCount} deal breaching ${rules.staleSlaDays}d SLA`,
+        gapLabel: `-${formatMillions(q1H.gapArr)} (${q1H.dealsNeeded} deals needed)`,
         rootCause:
-          q1H.staleCount > 0
-            ? `Honeywell Aero ($250K) is at 239d in Internal Review Pending.`
-            : `Insufficient late-stage deals scheduled for Q1 close.`,
-        recommendedAction: "Unblock Honeywell Aero legal/commercial review for Q1 close.",
+          q1H.activeCount === 0
+            ? "No deals currently assigned to Q1 2027 Close Qtr."
+            : `Only ${q1H.activeCount} deal(s) assigned to Q1 2027.`,
+        recommendedAction: "Assign expected Close Qtr on near-term deals in Accounts & Targets.",
       });
     }
 
@@ -332,12 +325,15 @@ export function PipelineHealthView({
         id: "fail_q2_horizon",
         severity: q2H.covMult < rules.healthyCoverageFloor ? "critical" : "warning",
         horizon: "Q2 2027",
-        metricName: "Q2 2027 Coverage & Aging Hygiene",
+        metricName: "Q2 2027 Coverage & Build Velocity",
         actualLabel: `${q2H.covMult}x (${formatMillions(q2H.pipeArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(q2H.reqPipe)})`,
         gapLabel: `-${formatMillions(q2H.gapArr)} (${q2H.dealsNeeded} deals needed)`,
-        rootCause: `${q2H.staleCount} of ${q2H.activeCount} Q2 deals exceed ${rules.staleSlaDays}d SLA (Honeywell Tech 451d, OKX 113d).`,
-        recommendedAction: "Multi-thread CFO/CAE sponsors in Q2 cohort and add 8 new qualified deals.",
+        rootCause:
+          q2H.activeCount === 0
+            ? "No deals currently assigned to Q2 2027 Close Qtr."
+            : `${q2H.activeCount} deal(s) scheduled in Q2 2027.`,
+        recommendedAction: "Assign Q2 2027 Close Qtr to active Stage 2–4 opportunities.",
       });
     }
 
@@ -350,16 +346,16 @@ export function PipelineHealthView({
         actualLabel: `${qualifiedSharePct}%`,
         benchmarkLabel: `≥ ${rules.minQualifiedSharePct}%`,
         gapLabel: `-${rules.minQualifiedSharePct - qualifiedSharePct}% below threshold`,
-        rootCause: "Too much active ARR sitting in unvalidated Stage 1 Lead.",
-        recommendedAction: "Qualify Stage 1 leads (TIAA) or disqualify dormant rows.",
+        rootCause: "Active pipeline includes unvalidated Stage 1 Lead records.",
+        recommendedAction: "Validate Stage 1 leads or move dormant records out of active pipeline.",
       });
     }
 
-    // White-space Tier I F500 accounts ready to fill Q1/Q2 deficit
     const whitespaceTargets = contacts
       .filter(
         (c) =>
           c.contact_type === "customer" &&
+          !isNoise(c) &&
           c.omit_from_pipeline &&
           c.tier === "Tier I" &&
           c.fortune_500 &&
@@ -368,9 +364,9 @@ export function PipelineHealthView({
       .slice(0, 4);
 
     return {
+      activeDeals,
+      scheduledDeals,
       totalPipelineArr,
-      qualifiedArr,
-      qualifiedSharePct,
       repWeightedArr,
       aiRiskAdjustedArr,
       coverageMultActual,
@@ -385,7 +381,7 @@ export function PipelineHealthView({
       failingMetrics,
       whitespaceTargets,
     };
-  }, [contacts, pipelineAnalytics, rules, arrTarget2027, avgAcvAssumption, coverageMultiple, simExtraDeals, simRescueStale]);
+  }, [contacts, rules, arrTarget2027, avgAcvAssumption, coverageMultiple, simExtraDeals, simRescueStale]);
 
   const healthBadge =
     engine.compositeHealthScore >= 75
@@ -399,7 +395,7 @@ export function PipelineHealthView({
       {/* Top Autonomous Health Command Strip (4 Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-medium text-[var(--tx-muted)] flex items-center gap-1.5">
               <Gauge size={13} className="text-sky-400" />
               Autonomous Health Score
@@ -418,12 +414,12 @@ export function PipelineHealthView({
             </span>
           </div>
           <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Weighted across Coverage ({rules.scoreWeights.coverage}%), Hygiene ({rules.scoreWeights.velocityHygiene}%), Qual ({rules.scoreWeights.qualificationDepth}%)
+            Coverage ({rules.scoreWeights.coverage}%) · Hygiene ({rules.scoreWeights.velocityHygiene}%) · Qual ({rules.scoreWeights.qualificationDepth}%)
           </div>
         </div>
 
         <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
               AI Risk-Adjusted ARR (FY27)
             </span>
@@ -440,12 +436,12 @@ export function PipelineHealthView({
             </span>
           </div>
           <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Rep stated: {formatMillions(engine.repWeightedArr)} (discounted for &gt;{rules.staleSlaDays}d SLA aging)
+            Rep stated: {formatMillions(engine.repWeightedArr)} (discounted for &gt;{rules.staleSlaDays}d SLA)
           </div>
         </div>
 
         <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
               FY27 Coverage Ratio
             </span>
@@ -462,12 +458,12 @@ export function PipelineHealthView({
             </span>
           </div>
           <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Deficit: {formatMillions(engine.coverageGapArr)} ({Math.ceil(engine.coverageGapArr / avgAcvAssumption)} deals @ {formatMillions(avgAcvAssumption)})
+            Deficit: {formatMillions(engine.coverageGapArr)} ({Math.ceil(engine.coverageGapArr / avgAcvAssumption)} deals)
           </div>
         </div>
 
         <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
               SLA Breach Exposure (&gt;{rules.staleSlaDays}d)
             </span>
@@ -484,7 +480,7 @@ export function PipelineHealthView({
             </span>
           </div>
           <div className="text-[11px] text-[var(--tx-muted)] mt-1 flex items-center justify-between">
-            <span>Rules governed in Settings</span>
+            <span>Governed by Settings Rules</span>
             {canConfigureRules && (
               <button
                 type="button"
@@ -500,35 +496,33 @@ export function PipelineHealthView({
       </div>
 
       {/* SECTION 1: Failing Health Metrics Diagnostic Panel */}
-      <div className="bg-[var(--bg-surface)] border border-rose-500/30 rounded-lg overflow-hidden">
-        <div className="px-4 py-3 bg-rose-500/10 border-b border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-[var(--bg-surface)] border border-rose-500/35 rounded-lg overflow-hidden">
+        <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <ShieldAlert size={16} className="text-rose-400" />
+            <ShieldAlert size={15} className="text-rose-400" />
             <h2 className="text-[13px] font-semibold text-[var(--tx-primary)]">
               Failing Pipeline Health Metrics ({engine.failingMetrics.length} Breaching Settings Benchmarks)
             </h2>
           </div>
-          <div className="flex items-center gap-2">
-            {canConfigureRules && (
-              <button
-                type="button"
-                onClick={onOpenSettingsRules}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
-              >
-                <Sliders size={12} className="text-sky-400" />
-                Configure Benchmarks &amp; Formulas
-              </button>
-            )}
-          </div>
+          {canConfigureRules && (
+            <button
+              type="button"
+              onClick={onOpenSettingsRules}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
+            >
+              <Sliders size={12} className="text-sky-400" />
+              Configure Benchmarks &amp; Formulas
+            </button>
+          )}
         </div>
 
         <div className="divide-y divide-[var(--border-subtle)]">
           {engine.failingMetrics.map((fm) => (
             <div
               key={fm.id}
-              className="px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[var(--bg-hover)] transition-colors"
+              className="px-4 py-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[var(--bg-hover)] transition-colors"
             >
-              <div className="space-y-1 min-w-0 flex-1">
+              <div className="space-y-0.5 min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
@@ -572,8 +566,8 @@ export function PipelineHealthView({
       </div>
 
       {/* SECTION 2: 3-Horizon Health Cockpit (Full Year 2027 + Next 2 Quarters: Q1 2027 & Q2 2027) */}
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-[13.5px] font-semibold text-[var(--tx-primary)]">
               Horizon Health &amp; Coverage Diagnostics (Full Year 2027 &amp; Next 2 Quarters)
@@ -583,7 +577,6 @@ export function PipelineHealthView({
             </p>
           </div>
 
-          {/* Interactive AI What-If Simulator Controls */}
           <div className="flex flex-wrap items-center gap-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 text-[11.5px]">
             <span className="inline-flex items-center gap-1 font-medium text-sky-400">
               <Sparkles size={12} />
@@ -640,7 +633,6 @@ export function PipelineHealthView({
                   </span>
                 </div>
 
-                {/* Coverage Progress Bar */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11.5px]">
                     <span className="text-[var(--tx-muted)]">Coverage vs {coverageMultiple}x Target</span>
@@ -648,7 +640,7 @@ export function PipelineHealthView({
                       {h.covMult}x ({formatMillions(h.pipeArr)} / {formatMillions(h.reqPipe)})
                     </span>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-slate-800/80 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
                         h.status === "HEALTHY"
@@ -685,7 +677,7 @@ export function PipelineHealthView({
 
                 <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] text-[var(--tx-muted)]">
                   <span>
-                    {h.activeCount} active deals · {h.dealsNeeded} net-new needed
+                    {h.activeCount} scheduled deals · {h.dealsNeeded} net-new needed
                   </span>
                   {h.staleCount > 0 ? (
                     <span className="text-rose-400 font-medium">
@@ -701,8 +693,7 @@ export function PipelineHealthView({
         </div>
       </div>
 
-      
-      {/* SECTION 2B: Compressed Interactive Deal Close Timeline Grid (Merged above Trend Graph, Zero KPI/Filter Strips) */}
+      {/* SECTION 2B: Compressed 2027 Deal Close Timeline (Populates ONLY when Close Qtr is assigned) */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -710,24 +701,18 @@ export function PipelineHealthView({
               2027 Deal Close Timeline
             </h3>
             <span className="text-[11px] font-mono text-[var(--tx-muted)]">
-              · {contacts.filter((c) => c.contact_type === "customer" && !c.omit_from_pipeline && c.stage !== "9 No response").length} active deals
+              · {engine.scheduledDeals.length} deals with assigned Close Qtr
             </span>
           </div>
           <span className="text-[11px] text-[var(--tx-muted)]">
-            Drag any deal across Q1–Q4 to reschedule close &amp; recompute horizon health · Click card for dossier
+            Assign Close Qtr in Accounts &amp; Targets to populate · Drag cards across Q1–Q4 to reschedule
           </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--border-subtle)]">
-          {(["Q1 2027", "Q2 2027", "Q3 2027", "Q4 2027"] as const).map((q) => {
-            const qDeals = contacts
-              .filter(
-                (c) =>
-                  c.contact_type === "customer" &&
-                  !c.omit_from_pipeline &&
-                  c.stage !== "9 No response" &&
-                  (c.expected_close || "Q2 2027") === q
-              )
+          {VALID_QUARTERS.map((q) => {
+            const qDeals = engine.scheduledDeals
+              .filter((d) => d.expected_close === q)
               .sort((a, b) => (b.amount_usd || 0) - (a.amount_usd || 0));
             const qTotalArr = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
             const qWeightedArr = qDeals.reduce((s, d) => {
@@ -755,7 +740,7 @@ export function PipelineHealthView({
                     onUpdateContact(dealId, { expected_close: q });
                   }
                 }}
-                className={`p-3 flex flex-col gap-2 min-h-[168px] transition-colors ${
+                className={`p-3 flex flex-col gap-2 min-h-[140px] transition-colors ${
                   isOver ? "bg-sky-500/10" : "bg-transparent"
                 }`}
               >
@@ -772,8 +757,8 @@ export function PipelineHealthView({
                 </div>
 
                 {qDeals.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center rounded border border-dashed border-[var(--border-subtle)] text-[11px] text-[var(--tx-muted)] py-6">
-                    Drop deal here
+                  <div className="flex-1 flex items-center justify-center rounded border border-dashed border-[var(--border-subtle)] text-[11px] text-[var(--tx-muted)] py-5">
+                    No deals scheduled in {q}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -797,7 +782,7 @@ export function PipelineHealthView({
                           className={`p-2 rounded border cursor-grab active:cursor-grabbing transition-colors ${
                             isStale
                               ? "bg-rose-500/10 border-rose-500/30 hover:border-rose-400/60"
-                              : "bg-[var(--bg-canvas)]/70 border-[var(--border-subtle)] hover:border-sky-400/50"
+                              : "bg-[var(--bg-canvas)] border-[var(--border-subtle)] hover:border-sky-400/50"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-1.5">
@@ -825,29 +810,37 @@ export function PipelineHealthView({
         </div>
       </div>
 
-      {/* SECTION 3: Visual Trajectory + Autonomous Rescue & Whitespace Execution */}
+      {/* SECTION 3: Quarterly Coverage Trend Graph & Autonomous Rescue Queue */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Quarterly Pacing Chart */}
         <div className="lg:col-span-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-[13px] font-semibold text-[var(--tx-primary)]">
-                2027 Quarterly Coverage vs. Required Pipeline ($M)
-              </h3>
-              <p className="text-[11px] text-[var(--tx-muted)]">
-                Compares active pipeline, AI risk-adjusted ARR, and {coverageMultiple}x required coverage across Q1–Q4.
-              </p>
-            </div>
+          <div className="mb-3">
+            <h3 className="text-[13px] font-semibold text-[var(--tx-primary)]">
+              2027 Quarterly Coverage vs. Required Pipeline ($M)
+            </h3>
+            <p className="text-[11px] text-[var(--tx-muted)]">
+              Compares scheduled pipeline, weighted ARR, and {coverageMultiple}x required coverage across Q1–Q4.
+            </p>
           </div>
           <div className="h-[240px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={pipelineAnalytics.quarterly.map((q) => ({
-                  quarter: q.quarter,
-                  RequiredM: Number((q.requiredPipeline / 1_000_000).toFixed(2)),
-                  ActiveM: Number((q.actualCoverage / 1_000_000).toFixed(2)),
-                  WeightedM: Number((q.weightedArr / 1_000_000).toFixed(2)),
-                }))}
+                data={VALID_QUARTERS.map((q) => {
+                  const weight = (rules.quarterWeights[q] || 25) / 100;
+                  const qTarget = Math.round(arrTarget2027 * weight);
+                  const qReq = Math.round(qTarget * coverageMultiple);
+                  const qDeals = engine.scheduledDeals.filter((d) => d.expected_close === q);
+                  const qAct = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
+                  const qWtd = qDeals.reduce((s, d) => {
+                    const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+                    return s + ((d.amount_usd || 0) * prob) / 100;
+                  }, 0);
+                  return {
+                    quarter: q,
+                    RequiredM: Number((qReq / 1_000_000).toFixed(2)),
+                    ActiveM: Number((qAct / 1_000_000).toFixed(2)),
+                    WeightedM: Number((qWtd / 1_000_000).toFixed(2)),
+                  };
+                })}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
                 <XAxis dataKey="quarter" tick={{ fontSize: 11, fill: "#94A3B8" }} />
@@ -862,14 +855,13 @@ export function PipelineHealthView({
                 />
                 <Legend wrapperStyle={{ fontSize: "11px" }} />
                 <Bar dataKey="RequiredM" name="Required Coverage ($M)" fill="#334155" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="ActiveM" name="Actual Pipeline ($M)" fill="#38BDF8" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="ActiveM" name="Scheduled Pipeline ($M)" fill="#38BDF8" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="WeightedM" name="Weighted ARR ($M)" fill="#10B981" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Autonomous Deal Rescue & Whitespace Queue */}
         <div className="lg:col-span-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -891,13 +883,13 @@ export function PipelineHealthView({
               {engine.staleDeals.slice(0, 4).map((deal) => (
                 <div
                   key={deal.id}
-                  className="px-3 py-2 flex items-center justify-between gap-2 bg-[var(--bg-canvas)]/40 hover:bg-[var(--bg-hover)] text-[12px]"
+                  className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-[var(--bg-hover)] text-[12px]"
                 >
                   <div className="min-w-0">
                     <div className="font-medium text-[var(--tx-primary)] truncate">
                       {deal.organization}{" "}
                       <span className="text-[11px] font-normal text-[var(--tx-muted)]">
-                        · {deal.full_name} ({deal.expected_close || "Q2 2027"})
+                        · {deal.full_name} {deal.expected_close ? `(${deal.expected_close})` : ""}
                       </span>
                     </div>
                     <div className="text-[11px] text-rose-400 font-mono">
@@ -911,7 +903,7 @@ export function PipelineHealthView({
                         onDraftFollowUp(
                           deal,
                           `${deal.organization} × Fortifai — Executive Review & Next Steps`,
-                          `Hi ${deal.first_name || "there"},\n\nFollowing up on our ${deal.product_or_instrument || "Fortifai"} scope for ${deal.organization} ahead of ${deal.expected_close || "Q1/Q2 2027"}. Happy to share a 2-page executive brief tailored for your ${deal.buyer_persona || "Risk & Finance"} team.\n\nBest,\n${currentUser.full_name}`
+                          `Hi ${deal.first_name || "there"},\n\nFollowing up on our ${deal.product_or_instrument || "Fortifai"} scope for ${deal.organization}. Happy to share a 2-page executive brief tailored for your ${deal.buyer_persona || "Risk & Finance"} team.\n\nBest,\n${currentUser.full_name}`
                         )
                       }
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 shrink-0"
@@ -925,16 +917,15 @@ export function PipelineHealthView({
             </div>
           </div>
 
-          {/* Whitespace Tier I F500 Feed */}
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--tx-muted)] mb-1.5">
-              Top Uncontacted Tier I Whitespace to Close Q1/Q2 Coverage Gap
+              Top Uncontacted Tier I Whitespace to Close Coverage Gap
             </div>
             <div className="grid grid-cols-2 gap-2">
               {engine.whitespaceTargets.map((wt) => (
                 <div
                   key={wt.id}
-                  className="px-2.5 py-1.5 rounded border border-[var(--border-subtle)] bg-[var(--bg-canvas)]/50 flex items-center justify-between text-[11.5px]"
+                  className="px-2.5 py-1.5 rounded border border-[var(--border-subtle)] bg-[var(--bg-canvas)] flex items-center justify-between text-[11.5px]"
                 >
                   <span className="font-medium text-[var(--tx-primary)] truncate">{wt.organization}</span>
                   <span className="font-mono text-[10.5px] text-emerald-400 shrink-0">
@@ -947,7 +938,7 @@ export function PipelineHealthView({
         </div>
       </div>
 
-      {/* Collapsible Formula Audit Table (Hidden by default so UI stays clean) */}
+      {/* Collapsible Formula Audit Table */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg overflow-hidden">
         <button
           type="button"
@@ -969,7 +960,7 @@ export function PipelineHealthView({
                   <th className="px-4 py-2">Quota Weight</th>
                   <th className="px-4 py-2">ARR Target</th>
                   <th className="px-4 py-2">Required ({coverageMultiple}x)</th>
-                  <th className="px-4 py-2">Actual Pipeline</th>
+                  <th className="px-4 py-2">Scheduled Pipeline</th>
                   <th className="px-4 py-2">Weighted ARR</th>
                   <th className="px-4 py-2">Coverage</th>
                   <th className="px-4 py-2">Deficit</th>

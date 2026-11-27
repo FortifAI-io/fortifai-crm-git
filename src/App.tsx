@@ -291,7 +291,14 @@ function ScaleWorkspace({
     try { localStorage.removeItem("fortifai_crm_contacts_v2"); } catch {}
     const users = normalizeCrmUsers(loadLocalState("USERS", INITIAL_CRM_USERS));
     const loaded = loadLocalState("CONTACTS", INITIAL_CONTACTS);
-    const cleaned = loaded.filter(
+    let migrated = loaded;
+    try {
+      if (!localStorage.getItem("fortifai_cleared_qtr_v1")) {
+        migrated = loaded.map((c) => c.contact_type === "customer" ? { ...c, expected_close: "" } : c);
+        localStorage.setItem("fortifai_cleared_qtr_v1", "1");
+      }
+    } catch {}
+    const cleaned = migrated.filter(
       (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
     );
     return normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users);

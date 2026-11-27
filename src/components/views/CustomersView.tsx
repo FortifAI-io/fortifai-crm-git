@@ -1207,7 +1207,7 @@ export function CustomersView({
                       {/* Close Qtr */}
                       <td className={`${densityCls.bodyCell} whitespace-nowrap`} onClick={(e) => e.stopPropagation()}>
                         <select
-                          value={c.expected_close || "Q2 2027"}
+                          value={c.expected_close || ""}
                           disabled={!canEdit}
                           onChange={(e) => onUpdateContact(c.id, { expected_close: e.target.value })}
                           className="text-xs bg-transparent border border-transparent hover:border-slate-200 rounded px-1.5 py-1 text-slate-700 focus:outline-none"
