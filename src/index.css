@@ -492,3 +492,8 @@ body, button, input, select, textarea, table, th, td, .font-mono {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-variant-numeric: tabular-nums;
 }
+
+html, body, #root {
+  max-width: 100vw;
+  overflow-x: hidden;
+}

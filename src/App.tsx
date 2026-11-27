@@ -377,13 +377,23 @@ function ScaleWorkspace({
   });
 
   useEffect(() => {
-    try {
-      window.scrollTo(0, 0);
-      document.querySelectorAll('main, [data-scroll-container="true"]').forEach((el) => {
-        (el as HTMLElement).scrollTop = 0;
-        (el as HTMLElement).scrollLeft = 0;
-      });
-    } catch {}
+    const resetScroll = () => {
+      try {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollTop = 0;
+        document.body.scrollLeft = 0;
+        document.querySelectorAll('main, div').forEach((el) => {
+          const node = el as HTMLElement;
+          if (node.scrollLeft > 0) node.scrollLeft = 0;
+          if (node.tagName === 'MAIN') node.scrollTop = 0;
+        });
+      } catch {}
+    };
+    resetScroll();
+    const raf = requestAnimationFrame(resetScroll);
+    return () => cancelAnimationFrame(raf);
   }, [activeTab]);
 
   useEffect(() => {
@@ -3081,7 +3091,7 @@ function ScaleWorkspace({
       onRefreshSession={refreshCmsSession}
       onNotify={showToast}
     >
-      <div className="min-h-screen flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
+      <div className="min-h-screen w-full max-w-full overflow-x-hidden flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
         {/* Deep Navy 52px Icon Rail (#0D1520) with Unclipped Fixed Hover Tooltips */}
         <aside
           className={`${
