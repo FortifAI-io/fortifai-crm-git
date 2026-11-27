@@ -515,7 +515,7 @@ async function startServer() {
         exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
       };
       const inviteToken = signSessionToken(inviteClaims);
-      const baseUrl = "https://fortifai-crm-git.vercel.app";
+      const baseUrl = (process.env.APP_URL || "https://scale.fortifai.io").trim().replace(/\/+$/, "");
       const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(email)}`;
 
       const resendKey = (process.env.RESEND_API_KEY || "").trim();
@@ -615,7 +615,7 @@ async function startServer() {
         exp: Date.now() + 60 * 60 * 1000, // 1 hour validity
       };
       const resetToken = signSessionToken(resetClaims);
-      const baseUrl = "https://fortifai-crm-git.vercel.app";
+      const baseUrl = (process.env.APP_URL || "https://scale.fortifai.io").trim().replace(/\/+$/, "");
       const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
 
       const resendKey = (process.env.RESEND_API_KEY || "").trim();

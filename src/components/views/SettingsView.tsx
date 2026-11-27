@@ -394,7 +394,7 @@ export function SettingsView({
               Flow 1 · Inbound Replies (Power Automate Trigger: When a new email arrives V3)
             </div>
             <div className="text-[11px] text-[var(--tx-muted)] font-mono">
-              POST https://fortifai-crm-git.vercel.app/api/webhooks/outlook-sync
+              POST https://scale.fortifai.io/api/webhooks/outlook-sync
             </div>
             <pre className="p-2 rounded bg-slate-950 text-slate-200 text-[10.5px] overflow-x-auto">{`{
   "direction": "inbound",
