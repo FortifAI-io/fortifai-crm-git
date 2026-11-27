@@ -3406,6 +3406,21 @@ function ScaleWorkspace({
             renderTemplate={renderEmailTemplate}
             filterResetSeq={compFilterResetSeq}
             telemetry={accessibleTelemetry}
+            onCancelSequence={() => {
+              setCompSelectedIds([]);
+              setPreviewIdx(0);
+              setCompPortalLink('none');
+              if (activeTab === 'investor_outreach') {
+                setCompSubject('Fortifai — Autonomous Audit & Compliance for Fortune 500 ($3M Seed)');
+                setCompBody('Hi {{first_name}},\n\n{{custom_hook}}\n\nWe are raising a $3M Seed ($15M cap post-money SAFE) with enterprise deployments across Honeywell, Nokia, and Brookfield Properties—monitoring 100% of ERP transactions inside the customer\'s VPC with zero data egress.\n\nWould you have 20 minutes next week to connect?\n\nBest,\nVarun Mowar\nCo-Founder & CEO, Fortifai');
+                navigateToTab('investors');
+              } else {
+                setCompSubject('Continuous compliance & third-party oversight at {{organization}}');
+                setCompBody('Hi {{first_name}},\n\n{{custom_hook}}\n\nMost compliance teams still rely on periodic sample testing across siloed ERPs—leaving blind spots around FCPA, third-party onboarding, and post-clearance trade exposure.\n\nLed in the Americas by former DOJ Fraud Section Trial Attorney David Maria, Fortifai deploys inside your private VPC (zero data egress) to continuously monitor 100% of SAP/Oracle transactions and surface defensible audit trails.\n\nOpen to a brief 15-minute exchange next Tuesday or Thursday?\n\nBest,\nVarun Mowar\nFounder & CEO, Fortifai');
+                navigateToTab('customers');
+              }
+              showToast('Outreach sequence cancelled and draft cleared.');
+            }}
           />
         )}
 
@@ -3443,6 +3458,21 @@ function ScaleWorkspace({
             renderTemplate={renderEmailTemplate}
             filterResetSeq={compFilterResetSeq}
             telemetry={accessibleTelemetry}
+            onCancelSequence={() => {
+              setCompSelectedIds([]);
+              setPreviewIdx(0);
+              setCompPortalLink('none');
+              if (activeTab === 'investor_outreach') {
+                setCompSubject('Fortifai — Autonomous Audit & Compliance for Fortune 500 ($3M Seed)');
+                setCompBody('Hi {{first_name}},\n\n{{custom_hook}}\n\nWe are raising a $3M Seed ($15M cap post-money SAFE) with enterprise deployments across Honeywell, Nokia, and Brookfield Properties—monitoring 100% of ERP transactions inside the customer\'s VPC with zero data egress.\n\nWould you have 20 minutes next week to connect?\n\nBest,\nVarun Mowar\nCo-Founder & CEO, Fortifai');
+                navigateToTab('investors');
+              } else {
+                setCompSubject('Continuous compliance & third-party oversight at {{organization}}');
+                setCompBody('Hi {{first_name}},\n\n{{custom_hook}}\n\nMost compliance teams still rely on periodic sample testing across siloed ERPs—leaving blind spots around FCPA, third-party onboarding, and post-clearance trade exposure.\n\nLed in the Americas by former DOJ Fraud Section Trial Attorney David Maria, Fortifai deploys inside your private VPC (zero data egress) to continuously monitor 100% of SAP/Oracle transactions and surface defensible audit trails.\n\nOpen to a brief 15-minute exchange next Tuesday or Thursday?\n\nBest,\nVarun Mowar\nFounder & CEO, Fortifai');
+                navigateToTab('customers');
+              }
+              showToast('Outreach sequence cancelled and draft cleared.');
+            }}
           />
         )}
 

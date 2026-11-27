@@ -65,6 +65,7 @@ interface ComposerViewProps {
   renderTemplate: (tpl: string, contact?: Contact) => string;
   filterResetSeq?: number;
   telemetry?: TelemetryEvent[];
+  onCancelSequence?: () => void;
 }
 
 interface PlaybookPreset {
@@ -256,6 +257,7 @@ export function ComposerView({
   renderTemplate,
   filterResetSeq = 0,
   telemetry = [],
+  onCancelSequence,
 }: ComposerViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -471,6 +473,7 @@ export function ComposerView({
     setCooldownDays(0);
     setViewMode("wizard");
     setStep(1);
+    if (onCancelSequence) onCancelSequence();
   };
 
   const applyQuickCohort = (
