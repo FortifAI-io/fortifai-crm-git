@@ -110,6 +110,18 @@ function getFitCategoryValue(c: Contact): string {
   return "Other";
 }
 
+
+function getEngagementPriorityRank(c: Contact): number {
+  const status = (c.delivery_status || "not_sent").toLowerCase();
+  if (status === "replied") return 100;
+  if (status === "portal_visited" || c.portal_visited) return 90;
+  if (status === "opened" || c.email_opened) return 80;
+  if (status === "delivered") return 70;
+  if (status === "sent" || status === "scheduled") return 60;
+  if (c.stage && c.stage !== "1 Lead" && c.stage !== "9 No response") return 40;
+  return 0;
+}
+
 export function CustomersView({
   canEdit,
   canSendCampaigns,
