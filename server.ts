@@ -528,6 +528,87 @@ function escapeHtmlBasic(str: string): string {
 }
 
   
+  app.get("/api/crm/segments", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const domain = typeof req.query.domain === "string" ? req.query.domain.trim() : "";
+      const sbAdmin = getSupabaseAdmin();
+      if (!sbAdmin) {
+        return res.status(200).json({ ok: true, segments: [], localOnly: true });
+      }
+
+      let query = sbAdmin
+        .from("outreach_segments")
+        .select("*")
+        .order("created_at", { ascending: true });
+      if (domain) {
+        query = query.eq("domain_scope", domain);
+      }
+
+      const result = await Promise.race([
+        query,
+        new Promise<{ data: null; error: { message: string; code?: string } }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: { message: "Timeout", code: "TIMEOUT" } }), 3500)
+        ),
+      ]);
+
+      if (result.error) {
+        return res.status(200).json({ ok: true, segments: [], localOnly: true });
+      }
+      return res.status(200).json({ ok: true, segments: result.data || [] });
+    } catch {
+      return res.status(200).json({ ok: true, segments: [], localOnly: true });
+    }
+  });
+
+  app.post("/api/crm/segments", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const seg = (req.body || {}).segment as Record<string, unknown> | undefined;
+      if (!seg || typeof seg.id !== "string" || typeof seg.name !== "string") {
+        return res.status(400).json({ ok: false, error: "Valid segment payload required." });
+      }
+      const sbAdmin = getSupabaseAdmin();
+      if (!sbAdmin) {
+        return res.status(200).json({ ok: true, localOnly: true });
+      }
+
+      const row = {
+        id: seg.id,
+        name: seg.name.trim(),
+        domain_scope: seg.domain_scope === "investor" ? "investor" : "customer",
+        mode: seg.mode === "static" ? "static" : "dynamic",
+        filters: seg.filters || {},
+        static_contact_ids: Array.isArray(seg.static_contact_ids) ? seg.static_contact_ids : [],
+        created_by: req.session?.email || String(seg.created_by || ""),
+        updated_at: new Date().toISOString(),
+      };
+
+      await Promise.race([
+        sbAdmin.from("outreach_segments").upsert(row, { onConflict: "id" }),
+        new Promise((r) => setTimeout(r, 3500)),
+      ]);
+
+      return res.status(200).json({ ok: true, segment: row });
+    } catch {
+      return res.status(200).json({ ok: true, localOnly: true });
+    }
+  });
+
+  app.delete("/api/crm/segments/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const segId = String(req.params.id || "").trim();
+      const sbAdmin = getSupabaseAdmin();
+      if (sbAdmin && segId) {
+        await Promise.race([
+          sbAdmin.from("outreach_segments").delete().eq("id", segId),
+          new Promise((r) => setTimeout(r, 3500)),
+        ]);
+      }
+      return res.status(200).json({ ok: true });
+    } catch {
+      return res.status(200).json({ ok: true, localOnly: true });
+    }
+  });
+
   app.post("/api/crm/upsert-contact", async (req: Request, res: Response) => {
     try {
       const authHeader = String(req.headers.authorization || "");
