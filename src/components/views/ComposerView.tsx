@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckSquare,
+  AlertTriangle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Edit3,
+  Filter,
   Link2,
   Lock,
   Mail,
@@ -11,7 +14,10 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
+  User,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import type {
   Contact,
@@ -21,12 +27,6 @@ import type {
   PortalLinkMode,
 } from '../../types/crm';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
-import {
-  ColumnFilterHeader,
-  type CategoricalOption,
-  type ColumnSortState,
-  type NumericFilterRange,
-} from '../ColumnFilterHeader';
 
 interface ComposerViewProps {
   currentUser: CrmUser;
@@ -60,32 +60,162 @@ interface ComposerViewProps {
   filterResetSeq?: number;
 }
 
+interface PlaybookPreset {
+  id: string;
+  label: string;
+  personaBadge: string;
+  portalMode: PortalLinkMode;
+  subject: string;
+  body: string;
+}
+
+const CUSTOMER_PLAYBOOKS: PlaybookPreset[] = [
+  {
+    id: 'cco_doj',
+    label: 'CCO / GC · DOJ ECCP & 3rd-Party Risk',
+    personaBadge: 'CCO/GC',
+    portalMode: 'none',
+    subject: 'Continuous compliance & third-party oversight at {{organization}}',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+Most compliance teams still rely on periodic sample testing across siloed ERPs—leaving blind spots around FCPA, third-party onboarding, and post-clearance trade exposure.
+
+Led in the Americas by former DOJ Fraud Section Trial Attorney David Maria, Fortifai deploys inside your private VPC (zero data egress) to continuously monitor 100% of SAP/Oracle transactions and surface defensible audit trails.
+
+Open to a brief 15-minute exchange next Tuesday or Thursday?
+
+Best,
+Varun Mowar
+Founder & CEO, Fortifai`,
+  },
+  {
+    id: 'cae_audit',
+    label: 'Chief Audit Exec · 100% ERP Population',
+    personaBadge: 'CAE',
+    portalMode: 'none',
+    subject: '100% transaction surveillance for {{organization}} Internal Audit',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+Traditional internal audit teams inspect under 5% of ERP transactions via quarterly samples—missing control overrides and duplicate leakage until months after close.
+
+Fortifai runs 100% inside your cloud or on-prem boundary (zero data egress) to test every P2P, O2C, and GL entry continuously, auto-assembling COSO / PCAOB AS 1105 evidence packs and cutting investigation effort by 50%+.
+
+Worth a quick 15-minute walkthrough of how peers run continuous audit on SAP/Oracle?
+
+Best,
+Varun Mowar
+Founder & CEO, Fortifai`,
+  },
+  {
+    id: 'cfo_margin',
+    label: 'CFO / CAO · 2–5% Margin & P2P Recovery',
+    personaBadge: 'CFO',
+    portalMode: 'none',
+    subject: 'Preventing P2P & margin leakage at {{organization}}',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+Across $1B+ enterprises, 2% to 5% of spend quietly leaks through off-contract pricing, duplicate disbursements, and unapplied vendor credits that clean sample audits miss.
+
+Fortifai deploys inside your private VPC with deterministic SQL math—flagging overpayments pre-payment run and surfacing up to $24.4M in stoppable exposure in a single deployment.
+
+Open to a 15-minute look at the numbers next week?
+
+Best,
+Varun Mowar
+Founder & CEO, Fortifai`,
+  },
+  {
+    id: 'cpo_supply',
+    label: 'CPO · Pass-Through Vendor & Price Guard',
+    personaBadge: 'CPO',
+    portalMode: 'none',
+    subject: 'Vendor price variance & middleman visibility — {{organization}}',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+Fortifai connects read-only to your ERP and procurement tables inside your VPC to benchmark every PO against contract terms, commodity indices, and external counterparty substance—exposing pass-through markups before cash leaves.
+
+Would you have 15 minutes next week to compare notes?
+
+Best,
+Varun Mowar
+Founder & CEO, Fortifai`,
+  },
+  {
+    id: 'warm_control_tower',
+    label: 'Warm Follow-Up · Multi-Agent Control Tower',
+    personaBadge: 'All Engaged',
+    portalMode: 'overview',
+    subject: 'Fortifai Multi-Agent Control Tower — architecture update for {{organization}}',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+Following up on our earlier conversation—wanted to share how we have unified our Audit, Compliance, Finance, and Procurement agents into a single in-VPC Control Tower running 100% inside {{organization}}'s security boundary with zero data egress.
+
+You can explore the interactive agent suite and ROI simulator here: {{portal_link}}
+
+Open to a brief 15-minute catch-up next week?
+
+Best,
+Varun Mowar
+Founder & CEO, Fortifai`,
+  },
+];
+
+const INVESTOR_PLAYBOOKS: PlaybookPreset[] = [
+  {
+    id: 'inv_wave1',
+    label: 'US Institutional Seed · Wave 1 Intro ($3M / $15M Cap)',
+    personaBadge: 'Wave 1 Lead',
+    portalMode: 'investor',
+    subject: 'Fortifai — Autonomous Audit & Compliance for Fortune 500 ($3M Seed)',
+    body: `Hi {{first_name}},
+
+{{custom_hook}}
+
+We are raising a $3M Seed ($15M cap post-money SAFE) with enterprise deployments across Honeywell, Nokia, and Brookfield Properties—monitoring 100% of ERP transactions inside the customer's VPC with zero data egress.
+
+Deck, 2027–2031 financial model, and live SAFE portal: {{portal_link}}
+
+Would you have 20 minutes next week to connect?
+
+Best,
+Varun Mowar
+Co-Founder & CEO, Fortifai`,
+  },
+  {
+    id: 'inv_nudge',
+    label: 'In-Thread Reminder · Traction & Portal Update',
+    personaBadge: 'Follow-Up',
+    portalMode: 'investor',
+    subject: 'Re: Fortifai ($3M Seed) — {{organization}}',
+    body: `Hi {{first_name}},
+
+Wanted to share a quick update as we finalize our $3M Seed ($15M cap post-money SAFE)—we just expanded our Fortune 500 enterprise pipeline across US Aero & Defense, Pharma, and Industrial accounts with former DOJ Fraud Section Trial Attorney David Maria leading the Americas.
+
+Updated deck & model are live here: {{portal_link}}
+
+Open to a quick 15-minute conversation next week?
+
+Best,
+Varun Mowar
+Co-Founder & CEO, Fortifai`,
+  },
+];
+
 const MARKETING_SENDER_IDENTITY = 'Fortifai <contact@fortifai.io>';
 
 function formatUserSender(user: CrmUser): string {
   const displayName = user.sender_display_name?.trim() || user.full_name;
   return `${displayName} <${user.email}>`;
-}
-
-function buildOptions(values: string[], labelMap?: (v: string) => string): CategoricalOption[] {
-  const counts = new Map<string, number>();
-  values.forEach((v) => {
-    counts.set(v, (counts.get(v) || 0) + 1);
-  });
-  return Array.from(counts.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([value, count]) => ({
-      value,
-      label: labelMap ? labelMap(value) : value,
-      count,
-    }));
-}
-
-function matchesNumeric(val: number, range: NumericFilterRange | null): boolean {
-  if (!range) return true;
-  if (range.min !== undefined && val < range.min) return false;
-  if (range.max !== undefined && val > range.max) return false;
-  return true;
 }
 
 export function ComposerView({
@@ -120,293 +250,245 @@ export function ComposerView({
   filterResetSeq = 0,
 }: ComposerViewProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
   const domainRecipients = useMemo(
     () => eligibleRecipients.filter((c) => c.contact_type === domainScope),
     [eligibleRecipients, domainScope]
   );
 
-  // Audience table search, view toggle & per-column filters
-  const [recipientSearch, setRecipientSearch] = useState('');
-  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
-  const [sortState, setSortState] = useState<ColumnSortState | null>(null);
+  // Pane 1: Outreach Mode (1-to-1 Direct DM vs Segment Cohort Builder) & Faceted Filters
+  const [outreachMode, setOutreachMode] = useState<'dm' | 'segment'>('segment');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [regionFilter, setRegionFilter] = useState<string>('All');
+  const [sectorFilter, setSectorFilter] = useState<string>('All');
+  const [personaFilter, setPersonaFilter] = useState<string>('All');
+  const [tierFilter, setTierFilter] = useState<string>('All');
+  const [stageFilter, setStageFilter] = useState<string>('All');
+  const [ownerFilter, setOwnerFilter] = useState<string>('All');
+  const [f500Only, setF500Only] = useState(false);
+  const [cooldownDays, setCooldownDays] = useState<number>(0);
 
-  // Shared & Customer column filters
-  const [nameFilter, setNameFilter] = useState<string[] | null>(null);
-  const [companyFilter, setCompanyFilter] = useState<string[] | null>(null);
-  const [tierFilter, setTierFilter] = useState<string[] | null>(null);
-  const [industryFilter, setIndustryFilter] = useState<string[] | null>(null);
-  const [personaFilter, setPersonaFilter] = useState<string[] | null>(null);
-  const [regionFilterCol, setRegionFilterCol] = useState<string[] | null>(null);
-  const [locationFilter, setLocationFilter] = useState<string[] | null>(null);
-  const [stageFilterCol, setStageFilterCol] = useState<string[] | null>(null);
-  const [ownerFilter, setOwnerFilter] = useState<string[] | null>(null);
-  const [icpRange, setIcpRange] = useState<NumericFilterRange | null>(null);
-  const [amountRange, setAmountRange] = useState<NumericFilterRange | null>(null);
-  const [closeQtrFilter, setCloseQtrFilter] = useState<string[] | null>(null);
-  const [sendStatusFilter, setSendStatusFilter] = useState<string[] | null>(null);
-
-  // Investor-specific column filters
-  const [priorityFilter, setPriorityFilter] = useState<string[] | null>(null);
-  const [waveFilter, setWaveFilter] = useState<string[] | null>(null);
-
-  const clearRecipientFilters = () => {
-    setRecipientSearch('');
-    setShowSelectedOnly(false);
-    setSortState(null);
-    setNameFilter(null);
-    setCompanyFilter(null);
-    setTierFilter(null);
-    setIndustryFilter(null);
-    setPersonaFilter(null);
-    setRegionFilterCol(null);
-    setLocationFilter(null);
-    setStageFilterCol(null);
-    setOwnerFilter(null);
-    setIcpRange(null);
-    setAmountRange(null);
-    setCloseQtrFilter(null);
-    setSendStatusFilter(null);
-    setPriorityFilter(null);
-    setWaveFilter(null);
-  };
+  // Pane 2 & 3: AI Personalized Hooks + Per-Recipient VIP Overrides
+  const [activePlaybookId, setActivePlaybookId] = useState<string>('');
+  const [aiHooksById, setAiHooksById] = useState<Record<string, string>>({});
+  const [generatingAiHooks, setGeneratingAiHooks] = useState(false);
+  const [aiStatusBanner, setAiStatusBanner] = useState<string | null>(null);
+  const [vipBodyOverrides, setVipBodyOverrides] = useState<Record<string, string>>({});
+  const [editingVipId, setEditingVipId] = useState<string | null>(null);
 
   useEffect(() => {
-    clearRecipientFilters();
+    setSearchQuery('');
+    setRegionFilter('All');
+    setSectorFilter('All');
+    setPersonaFilter('All');
+    setTierFilter('All');
+    setStageFilter('All');
+    setOwnerFilter('All');
+    setF500Only(false);
+    setCooldownDays(0);
+    setEditingVipId(null);
+    if (selectedIds.length === 1) {
+      setOutreachMode('dm');
+    } else {
+      setOutreachMode('segment');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainScope, filterResetSeq]);
 
-  const isExternalVerifiedLive = (c: Contact): boolean =>
-    c.email.trim().toLowerCase().endsWith('@fortifai.io') || c.is_demo === false;
+  // Extract distinct facet values from real database
+  const facetOptions = useMemo(() => {
+    const regions = new Set<string>();
+    const sectors = new Set<string>();
+    const personas = new Set<string>();
+    const stages = new Set<string>();
+    const owners = new Set<string>();
 
-  const getSendStatusKey = (c: Contact): string =>
-    isExternalVerifiedLive(c) ? 'live_verified' : 'safe_mode_blocked';
+    domainRecipients.forEach((c) => {
+      if (c.region) regions.add(c.region);
+      if (c.industry) sectors.add(c.industry);
+      if (domainScope === 'customer' && c.buyer_persona) personas.add(c.buyer_persona);
+      if (domainScope === 'investor' && c.priority_tier) personas.add(c.priority_tier);
+      if (c.stage) stages.add(c.stage);
+      if (c.owner) owners.add(c.owner);
+    });
 
-  const getSendStatusLabel = (key: string): string =>
-    key === 'live_verified' ? 'Live Verified' : 'Safe Mode Blocked';
-
-  const columnOptions = useMemo(() => {
     return {
-      names: buildOptions(domainRecipients.map((c) => c.full_name || 'Unnamed')),
-      companies: buildOptions(domainRecipients.map((c) => c.organization || 'Unnamed')),
-      tiers: buildOptions(domainRecipients.map((c) => c.tier || 'Tier I')),
-      industries: buildOptions(domainRecipients.map((c) => c.industry || 'Unspecified')),
-      personas: buildOptions(domainRecipients.map((c) => c.buyer_persona || 'Other')),
-      regions: buildOptions(domainRecipients.map((c) => c.region || 'Other')),
-      locations: buildOptions(domainRecipients.map((c) => c.location || 'Unspecified')),
-      stages: buildOptions(domainRecipients.map((c) => c.stage || '1 Lead')),
-      owners: buildOptions(domainRecipients.map((c) => c.owner || 'Unassigned')),
-      closeQtrs: buildOptions(domainRecipients.map((c) => c.expected_close || 'Q2 2027')),
-      sendStatuses: buildOptions(
-        domainRecipients.map((c) => getSendStatusKey(c)),
-        getSendStatusLabel
-      ),
-      priorities: buildOptions(domainRecipients.map((c) => c.priority_tier || 'P4')),
-      waves: buildOptions(domainRecipients.map((c) => c.execution_wave || 'Unassigned')),
+      regions: ['All', ...Array.from(regions).sort()],
+      sectors: ['All', ...Array.from(sectors).sort()],
+      personas: ['All', ...Array.from(personas).sort()],
+      stages: ['All', ...Array.from(stages).sort()],
+      owners: ['All', ...Array.from(owners).sort()],
     };
-  }, [domainRecipients]);
+  }, [domainRecipients, domainScope]);
 
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (recipientSearch.trim()) count++;
-    if (showSelectedOnly) count++;
-    if (nameFilter !== null) count++;
-    if (companyFilter !== null) count++;
-    if (tierFilter !== null) count++;
-    if (industryFilter !== null) count++;
-    if (personaFilter !== null) count++;
-    if (regionFilterCol !== null) count++;
-    if (locationFilter !== null) count++;
-    if (stageFilterCol !== null) count++;
-    if (ownerFilter !== null) count++;
-    if (icpRange && (icpRange.min !== undefined || icpRange.max !== undefined)) count++;
-    if (amountRange && (amountRange.min !== undefined || amountRange.max !== undefined)) count++;
-    if (closeQtrFilter !== null) count++;
-    if (sendStatusFilter !== null) count++;
-    if (priorityFilter !== null) count++;
-    if (waveFilter !== null) count++;
-    return count;
-  }, [
-    recipientSearch,
-    showSelectedOnly,
-    nameFilter,
-    companyFilter,
-    tierFilter,
-    industryFilter,
-    personaFilter,
-    regionFilterCol,
-    locationFilter,
-    stageFilterCol,
-    ownerFilter,
-    icpRange,
-    amountRange,
-    closeQtrFilter,
-    sendStatusFilter,
-    priorityFilter,
-    waveFilter,
-  ]);
-
-  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const isRecentlyContacted = (c: Contact, days: number): boolean => {
+    if (days <= 0 || !c.last_contacted_at) return false;
+    const ts = Date.parse(c.last_contacted_at);
+    if (Number.isNaN(ts)) return false;
+    return Date.now() - ts < days * 86_400_000;
+  };
 
   const filteredRecipients = useMemo(() => {
-    const q = recipientSearch.trim().toLowerCase();
-    const list = domainRecipients.filter((c) => {
-      if (showSelectedOnly && !selectedSet.has(c.id)) return false;
+    const q = searchQuery.trim().toLowerCase();
+    return domainRecipients.filter((c) => {
+      if (cooldownDays > 0 && isRecentlyContacted(c, cooldownDays)) return false;
       if (q) {
         const match =
           c.full_name.toLowerCase().includes(q) ||
           c.organization.toLowerCase().includes(q) ||
-          c.title.toLowerCase().includes(q) ||
           c.email.toLowerCase().includes(q) ||
-          (c.industry || '').toLowerCase().includes(q) ||
-          (c.buyer_persona || '').toLowerCase().includes(q) ||
-          (c.location || '').toLowerCase().includes(q) ||
-          (c.owner || '').toLowerCase().includes(q) ||
-          (c.execution_wave || '').toLowerCase().includes(q);
+          (c.title || '').toLowerCase().includes(q) ||
+          (c.industry || '').toLowerCase().includes(q);
         if (!match) return false;
       }
-      if (nameFilter !== null && !nameFilter.includes(c.full_name || 'Unnamed')) return false;
-      if (companyFilter !== null && !companyFilter.includes(c.organization || 'Unnamed')) {
-        return false;
+      if (outreachMode === 'dm') return true;
+
+      if (regionFilter !== 'All' && c.region !== regionFilter) return false;
+      if (sectorFilter !== 'All' && (c.industry || '') !== sectorFilter) return false;
+      if (personaFilter !== 'All') {
+        const key = domainScope === 'customer' ? c.buyer_persona : c.priority_tier;
+        if (key !== personaFilter) return false;
       }
       if (domainScope === 'customer') {
-        if (tierFilter !== null && !tierFilter.includes(c.tier || 'Tier I')) return false;
-        if (industryFilter !== null && !industryFilter.includes(c.industry || 'Unspecified')) {
-          return false;
-        }
-        if (personaFilter !== null && !personaFilter.includes(c.buyer_persona || 'Other')) {
-          return false;
-        }
-        if (!matchesNumeric(c.icp_score ?? 0, icpRange)) return false;
-        if (closeQtrFilter !== null && !closeQtrFilter.includes(c.expected_close || 'Q2 2027')) {
-          return false;
-        }
-      } else {
-        if (priorityFilter !== null && !priorityFilter.includes(c.priority_tier || 'P4')) {
-          return false;
-        }
-        if (waveFilter !== null && !waveFilter.includes(c.execution_wave || 'Unassigned')) {
-          return false;
-        }
+        if (tierFilter !== 'All' && (c.tier || 'Tier I') !== tierFilter) return false;
+        if (f500Only && !c.fortune_500) return false;
       }
-      if (regionFilterCol !== null && !regionFilterCol.includes(c.region || 'Other')) return false;
-      if (locationFilter !== null && !locationFilter.includes(c.location || 'Unspecified')) {
-        return false;
-      }
-      if (stageFilterCol !== null && !stageFilterCol.includes(c.stage || '1 Lead')) return false;
-      if (ownerFilter !== null && !ownerFilter.includes(c.owner || 'Unassigned')) return false;
-      if (!matchesNumeric(c.amount_usd || 0, amountRange)) return false;
-      if (sendStatusFilter !== null && !sendStatusFilter.includes(getSendStatusKey(c))) {
-        return false;
-      }
+      if (stageFilter !== 'All' && c.stage !== stageFilter) return false;
+      if (ownerFilter !== 'All' && (c.owner || '') !== ownerFilter) return false;
       return true;
-    });
-
-    if (!sortState) return list;
-
-    const dir = sortState.direction === 'asc' ? 1 : -1;
-    return [...list].sort((a, b) => {
-      switch (sortState.key) {
-        case 'name':
-          return a.full_name.localeCompare(b.full_name) * dir;
-        case 'company':
-          return a.organization.localeCompare(b.organization) * dir;
-        case 'industry':
-          return (a.industry || '').localeCompare(b.industry || '') * dir;
-        case 'persona':
-          return (a.buyer_persona || '').localeCompare(b.buyer_persona || '') * dir;
-        case 'location':
-          return a.location.localeCompare(b.location) * dir;
-        case 'region':
-          return a.region.localeCompare(b.region) * dir;
-        case 'stage':
-          return a.stage.localeCompare(b.stage) * dir;
-        case 'owner':
-          return (a.owner || '').localeCompare(b.owner || '') * dir;
-        case 'icp_score':
-          return ((a.icp_score ?? 0) - (b.icp_score ?? 0)) * dir;
-        case 'amount_usd':
-          return ((a.amount_usd || 0) - (b.amount_usd || 0)) * dir;
-        case 'expected_close':
-          return (a.expected_close || 'Q2 2027').localeCompare(b.expected_close || 'Q2 2027') * dir;
-        case 'priority_track': {
-          const prio = (a.priority_tier || 'P4').localeCompare(b.priority_tier || 'P4');
-          if (prio !== 0) return prio * dir;
-          return (a.execution_wave || '').localeCompare(b.execution_wave || '') * dir;
-        }
-        case 'send_status':
-          return (
-            getSendStatusLabel(getSendStatusKey(a)).localeCompare(
-              getSendStatusLabel(getSendStatusKey(b))
-            ) * dir
-          );
-        default:
-          return 0;
-      }
     });
   }, [
     domainRecipients,
     domainScope,
-    recipientSearch,
-    showSelectedOnly,
-    selectedSet,
-    nameFilter,
-    companyFilter,
-    tierFilter,
-    industryFilter,
+    outreachMode,
+    searchQuery,
+    regionFilter,
+    sectorFilter,
     personaFilter,
-    regionFilterCol,
-    locationFilter,
-    stageFilterCol,
+    tierFilter,
+    stageFilter,
     ownerFilter,
-    icpRange,
-    amountRange,
-    closeQtrFilter,
-    sendStatusFilter,
-    priorityFilter,
-    waveFilter,
-    sortState,
+    f500Only,
+    cooldownDays,
   ]);
 
-  const filteredIds = useMemo(
-    () => filteredRecipients.map((r) => r.id),
-    [filteredRecipients]
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const activeRecipients = useMemo(
+    () => domainRecipients.filter((c) => selectedSet.has(c.id)),
+    [domainRecipients, selectedSet]
   );
-  const selectedInFilteredCount = useMemo(
-    () => filteredIds.filter((id) => selectedSet.has(id)).length,
-    [filteredIds, selectedSet]
-  );
-  const allFilteredSelected =
-    filteredIds.length > 0 && selectedInFilteredCount === filteredIds.length;
-  const someFilteredSelected =
-    selectedInFilteredCount > 0 && selectedInFilteredCount < filteredIds.length;
 
-  useEffect(() => {
-    if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = someFilteredSelected;
-    }
-  }, [someFilteredSelected]);
+  // Smart Quick-Cohort Selectors
+  const applyQuickCohort = (
+    type: 'hot_signals' | 'active_pipeline' | 'tier1_legal_audit' | 'tier1_finance_proc' | 'uncontacted'
+  ) => {
+    setOutreachMode('segment');
+    setSearchQuery('');
+    setRegionFilter('All');
+    setSectorFilter('All');
+    setPersonaFilter('All');
+    setTierFilter('All');
+    setStageFilter('All');
+    setOwnerFilter('All');
+    setF500Only(false);
 
-  const toggleAllVisible = () => {
-    if (filteredIds.length === 0) return;
-    if (allFilteredSelected) {
-      const visibleSet = new Set(filteredIds);
-      onChangeSelectedIds(selectedIds.filter((id) => !visibleSet.has(id)));
+    let matched: Contact[] = [];
+    if (type === 'hot_signals') {
+      matched = domainRecipients.filter((c) => c.portal_visited || c.email_opened);
+    } else if (type === 'active_pipeline') {
+      matched = domainRecipients.filter((c) => !c.omit_from_pipeline && c.stage !== '1 Lead');
+    } else if (type === 'tier1_legal_audit') {
+      setTierFilter('Tier I');
+      matched = domainRecipients.filter(
+        (c) => (c.tier || 'Tier I') === 'Tier I' && ['CCO/GC', 'CAE'].includes(c.buyer_persona || '')
+      );
+    } else if (type === 'tier1_finance_proc') {
+      setTierFilter('Tier I');
+      matched = domainRecipients.filter(
+        (c) => (c.tier || 'Tier I') === 'Tier I' && ['CFO', 'CPO'].includes(c.buyer_persona || '')
+      );
     } else {
-      const merged = new Set(selectedIds);
-      filteredIds.forEach((id) => merged.add(id));
-      onChangeSelectedIds(Array.from(merged));
+      matched = domainRecipients.filter((c) => !c.delivery_status || c.delivery_status === 'not_sent');
+    }
+    onChangeSelectedIds(matched.map((c) => c.id));
+    onChangePreviewIdx(0);
+  };
+
+  const applyPlaybook = (preset: PlaybookPreset) => {
+    setActivePlaybookId(preset.id);
+    onChangeSubject(preset.subject);
+    onChangeBody(preset.body);
+    onChangePortalLinkMode(preset.portalMode);
+    setVipBodyOverrides({});
+  };
+
+  // Generate AI Dossier-Grounded Hooks via /api/personalize-outreach
+  const handleGenerateAiHooks = async () => {
+    if (activeRecipients.length === 0 || generatingAiHooks) return;
+    setGeneratingAiHooks(true);
+    setAiStatusBanner(null);
+    try {
+      const authRes = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser.email,
+          role: currentUser.role,
+          permissions: currentUser.permissions,
+          is_active: currentUser.is_active,
+        }),
+      });
+      const authJson = (await authRes.json()) as { ok?: boolean; token?: string };
+      const token = authJson.token || '';
+
+      const targetBatch = activeRecipients.slice(0, 35);
+      const resp = await fetch('/api/personalize-outreach', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          audienceType: domainScope,
+          playbookAngle: subject,
+          recipients: targetBatch.map((r) => ({
+            id: r.id,
+            full_name: r.full_name,
+            title: r.title,
+            organization: r.organization,
+            industry: r.industry,
+            buyer_persona: r.buyer_persona,
+            priority_tier: r.priority_tier,
+            stage: r.stage,
+            fortune_500: r.fortune_500,
+            notes: r.notes,
+          })),
+        }),
+      });
+      const data = (await resp.json()) as {
+        ok?: boolean;
+        hooks?: Record<string, string>;
+        dossiersUsed?: number;
+        error?: string;
+      };
+      if (!resp.ok || !data.ok || !data.hooks) {
+        setAiStatusBanner(data.error || 'Unable to generate AI hooks.');
+        return;
+      }
+      setAiHooksById((prev) => ({ ...prev, ...data.hooks }));
+      if (!body.includes('{{custom_hook}}')) {
+        onChangeBody(`Hi {{first_name}},\n\n{{custom_hook}}\n\n${body.replace(/^Hi \{\{first_name\}\},?\s*/i, '')}`);
+      }
+      const generatedCount = Object.keys(data.hooks).length;
+      setAiStatusBanner(
+        `Generated ${generatedCount} persona-tailored hooks (${data.dossiersUsed || 0} grounded in Account Intelligence Dossiers).`
+      );
+    } catch {
+      setAiStatusBanner('Network error calling /api/personalize-outreach.');
+    } finally {
+      setGeneratingAiHooks(false);
     }
   };
-
-  const selectOnlyFiltered = () => {
-    onChangeSelectedIds(filteredIds);
-  };
-
-  const activeRecipients = domainRecipients.filter((c) => selectedSet.has(c.id));
-  const scopedCustomFields = customFields.filter(
-    (cf) => cf.entity_scope === domainScope || cf.entity_scope === 'both'
-  );
 
   const portalAttachValue: PortalLinkMode =
     domainScope === 'investor' ? 'investor' : 'overview';
@@ -425,19 +507,25 @@ export function ComposerView({
     const end = el.selectionEnd ?? body.length;
     const before = body.slice(0, start);
     const after = body.slice(end);
-    const needsLeadingSpace =
-      before.length > 0 && !/[\s\n]$/.test(before) ? ' ' : '';
-    const nextValue = `${before}${needsLeadingSpace}${token}${after}`;
+    const pad = before.length > 0 && !/[\s\n]$/.test(before) ? ' ' : '';
+    const nextValue = `${before}${pad}${token}${after}`;
     onChangeBody(nextValue);
-    const nextCaret = start + needsLeadingSpace.length + token.length;
+    const nextCaret = start + pad.length + token.length;
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(nextCaret, nextCaret);
     });
   };
 
-  const renderFinalPreviewBody = (rawTemplate: string, sample: Contact): string => {
-    const text = renderTemplate(rawTemplate, sample);
+  const renderFinalPreviewBody = (sample: Contact): string => {
+    if (vipBodyOverrides[sample.id] !== undefined) {
+      return vipBodyOverrides[sample.id];
+    }
+    const enrichedContact: Contact = aiHooksById[sample.id]
+      ? { ...sample, custom_hook: aiHooksById[sample.id] }
+      : sample;
+
+    const text = renderTemplate(body, enrichedContact);
     if (effectivePortalMode === 'none') {
       return text.replace(/\n?\s*\{\{portal_link\}\}\s*/g, '').trimEnd();
     }
@@ -455,18 +543,20 @@ export function ComposerView({
     return text;
   };
 
-  const testTargetEmail = currentUser.email.trim().toLowerCase().endsWith('@fortifai.io')
-    ? currentUser.email.trim().toLowerCase()
-    : 'varun@fortifai.io';
-
-  const verifiedSelectedCount = activeRecipients.filter(isExternalVerifiedLive).length;
-  const blockedSelectedCount = activeRecipients.length - verifiedSelectedCount;
+  // Live Deliverability Linter
+  const sampleForLint =
+    activeRecipients[Math.min(previewIdx, Math.max(0, activeRecipients.length - 1))] ||
+    filteredRecipients[0];
+  const renderedSampleText = sampleForLint ? renderFinalPreviewBody(sampleForLint) : body;
+  const wordCount = renderedSampleText.trim().split(/\s+/).filter(Boolean).length;
+  const hasColdStageProspects = activeRecipients.some((c) => c.stage === '1 Lead');
+  const coldLinkWarning =
+    domainScope === 'customer' && hasColdStageProspects && effectivePortalMode !== 'none';
 
   const personalSender = formatUserSender(currentUser);
   const canSendAsMarketing =
     ['super_admin', 'admin', 'marketing'].includes(currentUser.role) ||
     Boolean(currentUser.permissions.can_send_as_marketing);
-
   const senderOptions = canSendAsMarketing
     ? [personalSender, MARKETING_SENDER_IDENTITY]
     : [personalSender];
@@ -479,968 +569,807 @@ export function ComposerView({
     return ownerUser ? formatUserSender(ownerUser) : personalSender;
   };
 
-  const ownerBreakdown = Array.from(
-    activeRecipients.reduce((acc, rec) => {
-      const resolved = resolveSenderForContact(rec);
-      acc.set(resolved, (acc.get(resolved) || 0) + 1);
-      return acc;
-    }, new Map<string, number>())
+  const isExternalVerifiedLive = (c: Contact): boolean =>
+    c.email.trim().toLowerCase().endsWith('@fortifai.io') || c.is_demo === false;
+  const verifiedSelectedCount = activeRecipients.filter(isExternalVerifiedLive).length;
+  const blockedSelectedCount = activeRecipients.length - verifiedSelectedCount;
+
+  const testTargetEmail = currentUser.email.trim().toLowerCase().endsWith('@fortifai.io')
+    ? currentUser.email.trim().toLowerCase()
+    : 'varun@fortifai.io';
+
+  const playbooks = domainScope === 'investor' ? INVESTOR_PLAYBOOKS : CUSTOMER_PLAYBOOKS;
+  const scopedCustomFields = customFields.filter(
+    (cf) => cf.entity_scope === domainScope || cf.entity_scope === 'both'
   );
 
-  const isFilteredSubset = filteredRecipients.length < domainRecipients.length;
-
   return (
-    <div className="p-6 max-w-[1600px] w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-      {/* Left Column: Audience & Editor */}
-      <div className="lg:col-span-7 space-y-5">
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 space-y-3.5">
-          {/* Header */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h2 className="text-sm font-semibold text-slate-900">
-                1. Select Warm Audience Segment
-              </h2>
-              <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-[#E2E8F0]">
-                {domainScope === 'investor' ? 'Investors ($3M Seed)' : 'Enterprise Customers'}
+    <div className="p-4 max-w-[1680px] w-full mx-auto grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+      {/* ===================================================================== */}
+      {/* PANE 1 (LEFT · 4 COLS): DYNAMIC AUDIENCE & SEGMENT BUILDER            */}
+      {/* ===================================================================== */}
+      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] flex flex-col overflow-hidden">
+        <div className="p-3.5 border-b border-[#E2E8F0] space-y-2.5 bg-slate-50/60">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+                01 · Target Audience
+              </span>
+              <span className="px-1.5 py-0.5 text-[10px] font-mono bg-white border border-[#E2E8F0] rounded text-slate-800">
+                {activeRecipients.length} selected
               </span>
             </div>
             {suppressedCount > 0 && (
-              <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-                <ShieldAlert size={12} />
-                {suppressedCount} Passed / Unsubscribed excluded
+              <span
+                title="Passed / Unsubscribed contacts automatically excluded"
+                className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200"
+              >
+                <ShieldAlert size={11} />
+                {suppressedCount} suppressed
               </span>
             )}
           </div>
 
-          {/* Search & Selection Action Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5">
-            <div className="relative w-full sm:w-72">
-              <Search
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="text"
-                value={recipientSearch}
-                onChange={(e) => setRecipientSearch(e.target.value)}
-                placeholder={
-                  domainScope === 'customer'
-                    ? 'Search name, company, industry, persona...'
-                    : 'Search partner, fund, track, region...'
-                }
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-[#E2E8F0] rounded-md focus:outline-none focus:bg-white focus:border-slate-400"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => setShowSelectedOnly((prev) => !prev)}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded border font-medium transition-colors whitespace-nowrap ${
-                  showSelectedOnly
-                    ? 'bg-[#0D1520] text-white border-[#0D1520]'
-                    : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-50'
-                }`}
-              >
-                <CheckSquare size={12} />
-                Selected ({activeRecipients.length})
-              </button>
-
-              {(activeFilterCount > 0 || sortState !== null) && (
-                <button
-                  type="button"
-                  onClick={clearRecipientFilters}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium whitespace-nowrap"
-                >
-                  <RotateCcw size={11} />
-                  Reset Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-                </button>
-              )}
-            </div>
+          {/* 1-to-1 DM vs Segment Cohort Toggle */}
+          <div className="grid grid-cols-2 gap-1 p-0.5 bg-slate-100 border border-[#E2E8F0] rounded-[5px]">
+            <button
+              type="button"
+              onClick={() => setOutreachMode('dm')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 text-[11.5px] font-medium rounded-[4px] transition-colors ${
+                outreachMode === 'dm'
+                  ? 'bg-[#0D1520] text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <User size={12} />
+              1-to-1 Direct DM
+            </button>
+            <button
+              type="button"
+              onClick={() => setOutreachMode('segment')}
+              className={`flex items-center justify-center gap-1.5 py-1.5 text-[11.5px] font-medium rounded-[4px] transition-colors ${
+                outreachMode === 'segment'
+                  ? 'bg-[#0D1520] text-white'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Users size={12} />
+              Segment Cohort
+            </button>
           </div>
 
-          {/* Selection Status & Bulk Actions Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 bg-slate-50/70 border border-slate-200/70 rounded-md px-3 py-2">
-            <div className="tabular-nums">
-              <strong className="text-slate-900">{activeRecipients.length}</strong> of{' '}
-              {domainRecipients.length} eligible selected
-              {isFilteredSubset && (
-                <span className="text-slate-400">
-                  {' '}
-                  · Showing <strong className="text-slate-700">{filteredRecipients.length}</strong>{' '}
-                  matching filter
-                </span>
-              )}
-            </div>
+          {/* Instant Search Input */}
+          <div className="relative">
+            <Search
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={
+                outreachMode === 'dm'
+                  ? 'Type executive name, company, or email...'
+                  : 'Filter matching contacts by name, firm, or title...'
+              }
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400"
+            />
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              {isFilteredSubset && filteredRecipients.length > 0 && (
+          {/* Smart AI Quick-Cohorts (Segment Mode) */}
+          {outreachMode === 'segment' && (
+            <div className="space-y-2 pt-1">
+              <div className="flex flex-wrap gap-1">
+                {domainScope === 'customer' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickCohort('active_pipeline')}
+                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                    >
+                      Engaged Pipeline (Stage 2+)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickCohort('tier1_legal_audit')}
+                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
+                    >
+                      Tier I · CCO/GC &amp; CAE
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickCohort('tier1_finance_proc')}
+                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
+                    >
+                      Tier I · CFO &amp; CPO
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickCohort('hot_signals')}
+                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                    >
+                      Hot Signals (Opened / Portal)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyQuickCohort('uncontacted')}
+                      className="px-2 py-0.5 text-[10.5px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-50"
+                    >
+                      Uncontacted Queue
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Faceted Segment Dropdown Grid */}
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <select
+                  value={regionFilter}
+                  onChange={(e) => setRegionFilter(e.target.value)}
+                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
+                  aria-label="Filter by Region"
+                >
+                  {facetOptions.regions.map((r) => (
+                    <option key={r} value={r}>
+                      {r === 'All' ? 'Region: All' : r}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={personaFilter}
+                  onChange={(e) => setPersonaFilter(e.target.value)}
+                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
+                  aria-label="Filter by Buyer Persona"
+                >
+                  {facetOptions.personas.map((p) => (
+                    <option key={p} value={p}>
+                      {p === 'All'
+                        ? domainScope === 'customer'
+                          ? 'Persona: All'
+                          : 'Priority: All'
+                        : p}
+                    </option>
+                  ))}
+                </select>
+
+                {domainScope === 'customer' && (
+                  <>
+                    <select
+                      value={sectorFilter}
+                      onChange={(e) => setSectorFilter(e.target.value)}
+                      className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700 truncate"
+                      aria-label="Filter by Industry Sector"
+                    >
+                      {facetOptions.sectors.map((s) => (
+                        <option key={s} value={s}>
+                          {s === 'All' ? 'Sector: All Industries' : s}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={tierFilter}
+                      onChange={(e) => setTierFilter(e.target.value)}
+                      className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
+                      aria-label="Filter by Tier"
+                    >
+                      <option value="All">Tier: All</option>
+                      <option value="Tier I">Tier I</option>
+                      <option value="Tier II">Tier II</option>
+                    </select>
+                  </>
+                )}
+
+                <select
+                  value={stageFilter}
+                  onChange={(e) => setStageFilter(e.target.value)}
+                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700 truncate"
+                  aria-label="Filter by Stage"
+                >
+                  {facetOptions.stages.map((st) => (
+                    <option key={st} value={st}>
+                      {st === 'All' ? 'Stage: All' : st}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={ownerFilter}
+                  onChange={(e) => setOwnerFilter(e.target.value)}
+                  className="px-2 py-1 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
+                  aria-label="Filter by Owner"
+                >
+                  {facetOptions.owners.map((ow) => (
+                    <option key={ow} value={ow}>
+                      {ow === 'All' ? 'Owner: All' : ow}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Fortune 500 + Cooldown Guard Row */}
+              <div className="flex items-center justify-between gap-2 text-[11px] text-slate-600 pt-0.5">
+                {domainScope === 'customer' ? (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={f500Only}
+                      onChange={(e) => setF500Only(e.target.checked)}
+                      className="rounded border-slate-300"
+                    />
+                    <span>Fortune 500 only</span>
+                  </label>
+                ) : (
+                  <span className="text-slate-400">Cooldown guard:</span>
+                )}
+                <select
+                  value={cooldownDays}
+                  onChange={(e) => setCooldownDays(Number(e.target.value))}
+                  className="px-2 py-0.5 bg-white border border-[#E2E8F0] rounded-[4px] text-[10.5px] text-slate-700"
+                >
+                  <option value={0}>Cooldown: Off</option>
+                  <option value={4}>Skip contacted &lt;4d</option>
+                  <option value={7}>Skip contacted &lt;7d</option>
+                  <option value={14}>Skip contacted &lt;14d</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Cohort Bulk Action Bar */}
+          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/80">
+            <span className="text-slate-500 font-mono">
+              Showing {filteredRecipients.length} of {domainRecipients.length}
+            </span>
+            <div className="flex items-center gap-2">
+              {outreachMode === 'segment' && filteredRecipients.length > 0 && (
                 <button
                   type="button"
-                  onClick={selectOnlyFiltered}
-                  className="px-2 py-0.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 font-medium transition-colors whitespace-nowrap"
+                  onClick={() => {
+                    onChangeSelectedIds(filteredRecipients.map((r) => r.id));
+                    onChangePreviewIdx(0);
+                  }}
+                  className="text-indigo-600 hover:underline font-medium"
                 >
-                  Select Only Matching ({filteredRecipients.length})
+                  Select Matching ({filteredRecipients.length})
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => onChangeSelectedIds(domainRecipients.map((r) => r.id))}
-                className="text-indigo-600 hover:underline font-medium whitespace-nowrap"
-              >
-                Select All ({domainRecipients.length})
-              </button>
               <button
                 type="button"
                 onClick={() => onChangeSelectedIds([])}
-                className="text-slate-500 hover:text-slate-800 hover:underline whitespace-nowrap"
+                className="text-slate-500 hover:text-slate-800 hover:underline inline-flex items-center gap-0.5"
               >
+                <RotateCcw size={10} />
                 Clear
               </button>
             </div>
           </div>
-
-          {/* Filterable Column-Header Recipient Table */}
-          <div className="border border-[#E2E8F0] rounded-md overflow-hidden">
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-slate-50 border-b border-[#E2E8F0] text-[11px] font-semibold tracking-wider text-slate-500">
-                  <tr>
-                    <th className="py-2 px-2.5 w-8">
-                      <input
-                        ref={headerCheckboxRef}
-                        type="checkbox"
-                        checked={allFilteredSelected}
-                        onChange={toggleAllVisible}
-                        disabled={filteredRecipients.length === 0}
-                        aria-label="Toggle all visible recipients"
-                        className="rounded border-slate-300 text-[#0D1520] cursor-pointer"
-                      />
-                    </th>
-
-                    {domainScope === 'customer' ? (
-                      <>
-                        <ColumnFilterHeader
-                          columnKey="name"
-                          label="Name"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.names}
-                          selectedValues={nameFilter}
-                          onChangeSelectedValues={setNameFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="company"
-                          label="Company"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.companies}
-                          selectedValues={companyFilter}
-                          onChangeSelectedValues={setCompanyFilter}
-                          subFacets={[
-                            {
-                              id: 'tier',
-                              label: 'Tier',
-                              options: columnOptions.tiers,
-                              selectedValues: tierFilter,
-                              onChange: setTierFilter,
-                            },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="industry"
-                          label="Industry"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.industries}
-                          selectedValues={industryFilter}
-                          onChangeSelectedValues={setIndustryFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="persona"
-                          label="Buyer Persona"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.personas}
-                          selectedValues={personaFilter}
-                          onChangeSelectedValues={setPersonaFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="location"
-                          label="Location"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.locations}
-                          selectedValues={locationFilter}
-                          onChangeSelectedValues={setLocationFilter}
-                          subFacets={[
-                            {
-                              id: 'region',
-                              label: 'Region',
-                              options: columnOptions.regions,
-                              selectedValues: regionFilterCol,
-                              onChange: setRegionFilterCol,
-                            },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="stage"
-                          label="Stage"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.stages}
-                          selectedValues={stageFilterCol}
-                          onChangeSelectedValues={setStageFilterCol}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="owner"
-                          label="Owner"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.owners}
-                          selectedValues={ownerFilter}
-                          onChangeSelectedValues={setOwnerFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="icp_score"
-                          label="ICP"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="numeric"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          numericRange={icpRange}
-                          onChangeNumericRange={setIcpRange}
-                          numericPlaceholder={{ min: '0', max: '100' }}
-                          numericPresets={[
-                            { label: '≥ 80', min: 80 },
-                            { label: '60–79', min: 60, max: 79 },
-                            { label: '< 60', max: 59 },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="amount_usd"
-                          label="Target ARR"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="numeric"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          numericRange={amountRange}
-                          onChangeNumericRange={setAmountRange}
-                          numericPlaceholder={{ min: '0', max: 'Max' }}
-                          numericPresets={[
-                            { label: '$100K+', min: 100000 },
-                            { label: '$250K+', min: 250000 },
-                            { label: '$500K+', min: 500000 },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="expected_close"
-                          label="Close Qtr"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.closeQtrs}
-                          selectedValues={closeQtrFilter}
-                          onChangeSelectedValues={setCloseQtrFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="send_status"
-                          label="Send Guard"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.sendStatuses}
-                          selectedValues={sendStatusFilter}
-                          onChangeSelectedValues={setSendStatusFilter}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <ColumnFilterHeader
-                          columnKey="name"
-                          label="Partner"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.names}
-                          selectedValues={nameFilter}
-                          onChangeSelectedValues={setNameFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="company"
-                          label="Fund"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.companies}
-                          selectedValues={companyFilter}
-                          onChangeSelectedValues={setCompanyFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="priority_track"
-                          label="Priority / Track"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.waves}
-                          selectedValues={waveFilter}
-                          onChangeSelectedValues={setWaveFilter}
-                          subFacets={[
-                            {
-                              id: 'priority',
-                              label: 'Priority',
-                              options: columnOptions.priorities,
-                              selectedValues: priorityFilter,
-                              onChange: setPriorityFilter,
-                            },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="region"
-                          label="Region"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.regions}
-                          selectedValues={regionFilterCol}
-                          onChangeSelectedValues={setRegionFilterCol}
-                          subFacets={[
-                            {
-                              id: 'city',
-                              label: 'Hub / City',
-                              options: columnOptions.locations.slice(0, 12),
-                              selectedValues: locationFilter,
-                              onChange: setLocationFilter,
-                            },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="stage"
-                          label="Status"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.stages}
-                          selectedValues={stageFilterCol}
-                          onChangeSelectedValues={setStageFilterCol}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="owner"
-                          label="Owner"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.owners}
-                          selectedValues={ownerFilter}
-                          onChangeSelectedValues={setOwnerFilter}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="amount_usd"
-                          label="Check ($)"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="numeric"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          numericRange={amountRange}
-                          onChangeNumericRange={setAmountRange}
-                          numericPlaceholder={{ min: '0', max: 'Max' }}
-                          numericPresets={[
-                            { label: '$500K+', min: 500000 },
-                            { label: '$1.0M+', min: 1000000 },
-                            { label: '$2.0M+', min: 2000000 },
-                          ]}
-                        />
-                        <ColumnFilterHeader
-                          columnKey="send_status"
-                          label="Send Guard"
-                          thClassName="py-2 px-2.5 whitespace-nowrap"
-                          mode="categorical"
-                          sortState={sortState}
-                          onChangeSort={setSortState}
-                          options={columnOptions.sendStatuses}
-                          selectedValues={sendStatusFilter}
-                          onChangeSelectedValues={setSendStatusFilter}
-                        />
-                      </>
-                    )}
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100 tabular-nums">
-                  {filteredRecipients.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={domainScope === 'customer' ? 12 : 9}
-                        className="p-6 text-center text-xs text-slate-400 space-y-2"
-                      >
-                        <div>No active {domainScope} recipients match these column filters.</div>
-                        {(activeFilterCount > 0 || sortState !== null) && (
-                          <button
-                            type="button"
-                            onClick={clearRecipientFilters}
-                            className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
-                          >
-                            Reset Column Filters
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRecipients.map((rec) => {
-                      const checked = selectedSet.has(rec.id);
-                      const toggleRow = () => {
-                        if (checked) {
-                          onChangeSelectedIds(selectedIds.filter((id) => id !== rec.id));
-                        } else {
-                          onChangeSelectedIds([...selectedIds, rec.id]);
-                        }
-                      };
-
-                      return (
-                        <tr
-                          key={rec.id}
-                          onClick={toggleRow}
-                          className={`cursor-pointer transition-colors ${
-                            checked ? 'bg-indigo-50/35 hover:bg-indigo-50/60' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <td className="py-2 px-2.5" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={toggleRow}
-                              aria-label={`Select ${rec.full_name} (${rec.organization})`}
-                              className="rounded border-slate-300 text-[#0D1520] cursor-pointer"
-                            />
-                          </td>
-
-                          {domainScope === 'customer' ? (
-                            <>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <div className="font-medium text-slate-900">{rec.full_name}</div>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                                  {rec.title}
-                                </div>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <div className="font-medium text-slate-800 flex items-center gap-1">
-                                  <span>{rec.organization}</span>
-                                  {rec.fortune_500 && (
-                                    <span className="text-[9px] px-1 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded font-medium">
-                                      F500
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {rec.tier || 'Tier I'}
-                                </div>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap text-slate-700">
-                                {rec.industry || 'Unspecified'}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-medium">
-                                  {rec.buyer_persona || 'Other'}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${getRegionBadgeStyle(
-                                    rec.region
-                                  )}`}
-                                >
-                                  {rec.region}
-                                </span>
-                                <span className="text-[10px] text-slate-400 ml-1.5">
-                                  {rec.location}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span
-                                  className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-medium ${getStageBadgeStyle(
-                                    rec.stage
-                                  )}`}
-                                >
-                                  {rec.stage}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap text-slate-600">
-                                {rec.owner}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap font-semibold text-emerald-700">
-                                {rec.icp_score ?? 0}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap font-medium text-slate-800">
-                                {formatCurrency(rec.amount_usd || 0)}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap text-slate-600">
-                                {rec.expected_close || 'Q2 2027'}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                {isExternalVerifiedLive(rec) ? (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                                    Live Verified
-                                  </span>
-                                ) : (
-                                  <span
-                                    title="Safe Mode Guard blocks external Resend calls unless contact exists in live Supabase with is_demo = false"
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium"
-                                  >
-                                    Safe Mode Blocked
-                                  </span>
-                                )}
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <div className="font-medium text-slate-900">{rec.full_name}</div>
-                                <div className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                                  {rec.title}
-                                </div>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap font-medium text-slate-800">
-                                {rec.organization}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span className="font-semibold text-slate-800">
-                                  {rec.priority_tier || 'P4'}
-                                </span>
-                                <span className="text-[10px] text-slate-400 ml-1.5 truncate max-w-[150px] inline-block align-bottom">
-                                  {rec.execution_wave}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span
-                                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${getRegionBadgeStyle(
-                                    rec.region
-                                  )}`}
-                                >
-                                  {rec.region}
-                                </span>
-                                <span className="text-[10px] text-slate-400 ml-1.5">
-                                  {rec.location}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                <span
-                                  className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-medium ${getStageBadgeStyle(
-                                    rec.stage
-                                  )}`}
-                                >
-                                  {rec.stage}
-                                </span>
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap text-slate-600">
-                                {rec.owner}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap font-medium text-slate-800">
-                                {formatCurrency(rec.amount_usd || 0)}
-                              </td>
-                              <td className="py-2 px-2.5 whitespace-nowrap">
-                                {isExternalVerifiedLive(rec) ? (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                                    Live Verified
-                                  </span>
-                                ) : (
-                                  <span
-                                    title="Safe Mode Guard blocks external Resend calls unless contact exists in live Supabase with is_demo = false"
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium"
-                                  >
-                                    Safe Mode Blocked
-                                  </span>
-                                )}
-                              </td>
-                            </>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
 
-        {/* Email Editor & Role-Based Sender Identity */}
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-900">
-              2. Sender Identity &amp; Personalized Message (Resend API)
-            </h2>
-            <span className="text-[11px] text-slate-400 font-mono">
-              Role: {currentUser.role}
-            </span>
-          </div>
-
-          {/* Role-Based Send From Selector + Deal Owner Batch Toggle */}
-          <div className="p-3.5 rounded-md bg-slate-50 border border-[#E2E8F0] space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end text-xs">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                  Send From Identity
-                </label>
-                <select
-                  value={sendFrom}
-                  disabled={useAssignedOwnerSender}
-                  onChange={(e) => onChangeSendFrom(e.target.value)}
-                  className="w-full px-2.5 py-2 bg-white border border-[#E2E8F0] rounded-md text-xs text-slate-900 font-medium disabled:opacity-50"
-                >
-                  {senderOptions.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-                {!canSendAsMarketing && (
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    Marketing alias (contact@fortifai.io) requires Marketing, Admin, or Super Admin access.
-                  </p>
-                )}
-              </div>
-
-              <label className="flex items-start gap-2.5 p-2.5 rounded-md bg-white border border-[#E2E8F0] cursor-pointer hover:bg-slate-50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={useAssignedOwnerSender}
-                  onChange={(e) => onChangeUseAssignedOwnerSender(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-300 text-[#0D1520]"
-                />
-                <div className="text-xs">
-                  <div className="font-medium text-slate-800 flex items-center gap-1.5">
-                    <UserCheck size={13} className="text-indigo-600 shrink-0" />
-                    Send from assigned Deal Owner&apos;s email
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    Dispatches each contact from their assigned owner in <span className="font-mono">crm_users</span>.
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {useAssignedOwnerSender && ownerBreakdown.length > 0 && (
-              <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
-                <span className="font-medium text-slate-700">Batch Owner Routing:</span>
-                {ownerBreakdown.map(([sender, count]) => (
-                  <span
-                    key={sender}
-                    className="px-2 py-0.5 rounded bg-white border border-slate-200 font-mono text-[10px] text-slate-700"
-                  >
-                    {sender} ({count})
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Optional Tracked Portal Link Selector */}
-          <div className="p-3.5 rounded-md bg-slate-50 border border-[#E2E8F0] space-y-2 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label
-                htmlFor={`portal-link-select-${domainScope}`}
-                className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5"
-              >
-                <Link2 size={13} className="text-slate-500" />
-                Include Portal Link
-              </label>
-              <select
-                id={`portal-link-select-${domainScope}`}
-                value={effectivePortalMode}
-                onChange={(e) => onChangePortalLinkMode(e.target.value as PortalLinkMode)}
-                className="bg-white border border-[#E2E8F0] rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:border-slate-400"
-              >
-                <option value="none">None (Plain 1-to-1 Email)</option>
-                <option value={portalAttachValue}>
-                  {domainScope === 'investor'
-                    ? 'Attach Investor Portal (investor.fortifai.io)'
-                    : 'Attach Product Overview (overview.fortifai.io)'}
-                </option>
-              </select>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {effectivePortalMode === 'none'
-                ? 'Sends the exact message body as written with zero portal URLs or ?ref= tracking injected.'
-                : body.includes('{{portal_link}}')
-                ? `Replaces {{portal_link}} inline with https://${portalHost}/?ref={{contact_id}}.`
-                : `Automatically appends a clean tracked ${portalHost} CTA line at the bottom, or place {{portal_link}} anywhere in the body.`}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Subject Line</label>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => onChangeSubject(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-md focus:outline-none focus:border-slate-400 font-medium text-slate-900"
-            />
-          </div>
-
-          <div>
-            <div className="text-[11px] text-slate-400 mb-1.5">
-              Insert Dynamic Variable or Optional Tracked Portal Link:
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                '{{first_name}}',
-                '{{organization}}',
-                '{{title}}',
-                '{{region}}',
-                ...(domainScope === 'investor' ? ['{{custom_hook}}'] : []),
-                ...scopedCustomFields.map((cf) => `{{custom.${cf.field_key}}}`),
-              ].map((token) => (
-                <button
-                  key={token}
-                  type="button"
-                  onClick={() => insertTokenAtCursor(token)}
-                  className="px-2 py-1 text-[11px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200 transition-colors"
-                >
-                  {token}
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={effectivePortalMode === 'none'}
-                onClick={() => insertTokenAtCursor('{{portal_link}}')}
-                title={
-                  effectivePortalMode === 'none'
-                    ? `Select "Attach ${
-                        domainScope === 'investor' ? 'Investor Portal' : 'Product Overview'
-                      }" above to insert {{portal_link}}`
-                    : `Insert {{portal_link}} at cursor (${portalHost}/?ref={{contact_id}})`
-                }
-                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded border border-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-              >
-                <Link2 size={11} />
-                Insert Tracked Portal Link
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <textarea
-              ref={textareaRef}
-              rows={10}
-              value={body}
-              onChange={(e) => onChangeBody(e.target.value)}
-              className="w-full p-3 text-xs leading-relaxed bg-white border border-[#E2E8F0] rounded-md focus:outline-none focus:border-slate-400 font-sans text-slate-800"
-            />
-          </div>
-
-          {/* Superhuman / Gmail Sent-Folder Sync Option */}
-          <label className="flex items-start gap-2.5 p-3 rounded-md bg-slate-50 border border-[#E2E8F0] cursor-pointer hover:bg-slate-100/70 transition-colors">
-            <input
-              type="checkbox"
-              checked={bccEnabled}
-              onChange={(e) => onChangeBccEnabled(e.target.checked)}
-              className="mt-0.5 rounded border-slate-300 text-[#0D1520]"
-            />
-            <div className="text-xs">
-              <div className="font-medium text-slate-800 flex items-center gap-1.5">
-                <Mail size={13} className="text-indigo-600 shrink-0" />
-                BCC my inbox ({currentUser.email}) so sent emails appear in Superhuman
-              </div>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Automatically sends a blind carbon copy via <span className="font-mono">/api/send-batch</span> so every Resend outreach thread is indexed in Gmail &amp; Superhuman.
-              </p>
-            </div>
-          </label>
-
-          {!canSendCampaigns && (
-            <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
-              <Lock size={14} className="shrink-0" />
-              <span>
-                Your role does not include <span className="font-mono">can_send_campaigns</span>. Ask a Super Admin to enable campaign sending in Admin &amp; Access.
-              </span>
-            </div>
-          )}
-
-          {/* Safe Mode / Test Send Guard Status */}
-          <div className="p-3 rounded-md bg-slate-50 border border-[#E2E8F0] text-xs flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-start gap-2 min-w-0">
-              <ShieldCheck size={14} className="text-emerald-700 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-medium text-slate-800">
-                  Safe Mode Guard Active
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  External domains (e.g. <span className="font-mono">@honeywell.com</span>,{' '}
-                  <span className="font-mono">@nokia.com</span>) are blocked on{' '}
-                  <span className="font-mono">/api/send-batch</span> unless verified in live
-                  Supabase <span className="font-mono">contacts</span> with{' '}
-                  <span className="font-mono">is_demo = false</span>. Test sends only deliver to{' '}
-                  <span className="font-mono">@fortifai.io</span>.
-                </p>
-              </div>
-            </div>
-            {activeRecipients.length > 0 && (
-              <div className="flex items-center gap-1.5 text-[11px] shrink-0 tabular-nums">
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                  {verifiedSelectedCount} live
-                </span>
-                {blockedSelectedCount > 0 && (
-                  <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium">
-                    {blockedSelectedCount} guarded
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between pt-2 gap-3">
-            <div className="text-xs text-slate-500">
-              Ready to send to{' '}
-              <strong className="text-slate-900">{activeRecipients.length} recipients</strong>{' '}
-              (staggered 1.5s/email)
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!canSendCampaigns || sendingTest || sendingBatch}
-                onClick={onSendTestToMe}
-                title={
-                  !canSendCampaigns
-                    ? 'Requires can_send_campaigns permission'
-                    : `Send test preview only to ${testTargetEmail}`
-                }
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-[#E2E8F0] rounded-md hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-              >
-                <Mail size={13} />
-                {sendingTest
-                  ? 'Sending Test...'
-                  : `Send Test to Me (${testTargetEmail})`}
-              </button>
-
-              <button
-                type="button"
-                disabled={!canSendCampaigns || sendingBatch || sendingTest || activeRecipients.length === 0}
-                onClick={onSendBatch}
-                title={!canSendCampaigns ? 'Requires can_send_campaigns permission' : undefined}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-white bg-[#0D1520] rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-              >
-                <Send size={14} />
-                {sendingBatch
-                  ? 'Dispatching via Resend...'
-                  : `Send Campaign (${activeRecipients.length})`}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Column: Live Recipient Preview Pane */}
-      <div className="lg:col-span-5">
-        <div className="bg-white border border-[#E2E8F0] rounded-lg p-5 sticky top-20 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">Live Rendered Preview</h3>
-              <p className="text-[11px] text-slate-400">
-                Inspect sender identity, variables &amp; tracking URL before sending
-              </p>
-            </div>
-            {activeRecipients.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChangePreviewIdx(
-                      previewIdx > 0 ? previewIdx - 1 : activeRecipients.length - 1
-                    )
-                  }
-                  className="p-1 rounded border border-slate-200 hover:bg-slate-50"
-                  aria-label="Previous recipient preview"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="text-slate-600 font-medium px-1 tabular-nums">
-                  {Math.min(previewIdx + 1, activeRecipients.length)} / {activeRecipients.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChangePreviewIdx(
-                      previewIdx + 1 < activeRecipients.length ? previewIdx + 1 : 0
-                    )
-                  }
-                  className="p-1 rounded border border-slate-200 hover:bg-slate-50"
-                  aria-label="Next recipient preview"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {activeRecipients.length === 0 ? (
-            <div className="py-16 text-center text-xs text-slate-400">
-              Select at least one recipient on the left to preview personalized copy.
+        {/* Scrollable Recipient Cards */}
+        <div className="divide-y divide-slate-100 max-h-[560px] overflow-y-auto">
+          {filteredRecipients.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              No active contacts match these filters.
             </div>
           ) : (
-            (() => {
-              const sample =
-                activeRecipients[Math.min(previewIdx, activeRecipients.length - 1)];
-              const resolvedFrom = resolveSenderForContact(sample);
-              return (
-                <div className="space-y-3 text-xs">
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-md p-3 space-y-1">
-                    <div>
-                      <span className="text-slate-400">From:</span>{' '}
-                      <span className="font-mono text-slate-800">{resolvedFrom}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">To:</span>{' '}
-                      <span className="font-medium text-slate-800">
-                        {sample.full_name} &lt;{sample.email}&gt;
-                      </span>
-                    </div>
-                    {bccEnabled && (
-                      <div>
-                        <span className="text-slate-400">BCC (Superhuman Sync):</span>{' '}
-                        <span className="font-mono text-indigo-700">{currentUser.email}</span>
-                      </div>
-                    )}
-                    <div>
-                      <span className="text-slate-400">Subject:</span>{' '}
-                      <span className="font-medium text-slate-900">
-                        {renderTemplate(subject, sample)}
-                      </span>
-                    </div>
-                  </div>
+            filteredRecipients.slice(0, 150).map((rec) => {
+              const isSelected = selectedSet.has(rec.id);
+              const handleSelect = () => {
+                if (outreachMode === 'dm') {
+                  onChangeSelectedIds([rec.id]);
+                  onChangePreviewIdx(0);
+                } else if (isSelected) {
+                  onChangeSelectedIds(selectedIds.filter((id) => id !== rec.id));
+                } else {
+                  onChangeSelectedIds([...selectedIds, rec.id]);
+                }
+              };
 
-                  <div className="border border-[#E2E8F0] rounded-md p-4 bg-white whitespace-pre-wrap leading-relaxed text-slate-800 min-h-[260px]">
-                    {renderFinalPreviewBody(body, sample)}
-                    <div className="mt-6 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
-                      If you&apos;d prefer not to receive these updates,{' '}
-                      <span className="underline">unsubscribe here</span>.
+              return (
+                <div
+                  key={rec.id}
+                  onClick={handleSelect}
+                  className={`px-3.5 py-2.5 cursor-pointer transition-colors flex items-start gap-2.5 ${
+                    isSelected
+                      ? 'bg-indigo-50/40 hover:bg-indigo-50/70'
+                      : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type={outreachMode === 'dm' ? 'radio' : 'checkbox'}
+                    checked={isSelected}
+                    onChange={handleSelect}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-1 rounded border-slate-300 text-[#0D1520] cursor-pointer"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-[12.5px] font-semibold text-slate-900 truncate">
+                        {rec.full_name}
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded border shrink-0 ${getStageBadgeStyle(
+                          rec.stage
+                        )}`}
+                      >
+                        {rec.stage}
+                      </span>
+                    </div>
+                    <div className="text-[11.5px] text-slate-600 truncate">
+                      {rec.organization}
+                      {rec.title ? ` · ${rec.title}` : ''}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded border ${getRegionBadgeStyle(
+                          rec.region
+                        )}`}
+                      >
+                        {rec.region}
+                      </span>
+                      {domainScope === 'customer' ? (
+                        <>
+                          {rec.buyer_persona && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                              {rec.buyer_persona}
+                            </span>
+                          )}
+                          {rec.industry && (
+                            <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                              {rec.industry}
+                            </span>
+                          )}
+                          {(rec.amount_usd || 0) > 0 && (
+                            <span className="text-[10px] font-mono text-emerald-700 ml-auto">
+                              {formatCurrency(rec.amount_usd || 0)}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {rec.priority_tier && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                              {rec.priority_tier}
+                            </span>
+                          )}
+                          {rec.check_size_label && (
+                            <span className="text-[10px] font-mono text-slate-500">
+                              {rec.check_size_label}
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {aiHooksById[rec.id] && (
+                        <span className="text-[9.5px] font-mono px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          AI Hook Ready
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               );
-            })()
+            })
           )}
+          {filteredRecipients.length > 150 && (
+            <div className="p-2.5 text-center text-[11px] text-slate-400 bg-slate-50">
+              Showing first 150 matching rows · Use filters or &quot;Select Matching ({filteredRecipients.length})&quot; above
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* PANE 2 (CENTER · 4 COLS): AI PLAYBOOKS & MESSAGE STUDIO               */}
+      {/* ===================================================================== */}
+      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] p-4 space-y-3.5">
+        <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] pb-2.5">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+              02 · AI Playbook &amp; Message Studio
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Select a persona angle &amp; synthesize dossier-grounded hooks
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={activeRecipients.length === 0 || generatingAiHooks}
+            onClick={handleGenerateAiHooks}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11.5px] font-medium text-white bg-[#2E5A8A] rounded-[4px] hover:bg-[#23476E] disabled:opacity-40 transition-colors whitespace-nowrap shrink-0"
+            title="Use Gemini + cached Account Intelligence Dossiers to write tailored 1-sentence openers"
+          >
+            <Sparkles size={12} />
+            {generatingAiHooks
+              ? 'Synthesizing...'
+              : `AI Hooks (${Math.min(activeRecipients.length, 35)})`}
+          </button>
+        </div>
+
+        {aiStatusBanner && (
+          <div className="p-2.5 rounded-[4px] bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] flex items-center justify-between gap-2">
+            <span>{aiStatusBanner}</span>
+            <button
+              type="button"
+              onClick={() => setAiStatusBanner(null)}
+              className="text-[10px] underline shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Persona Playbook Selector */}
+        <div>
+          <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+            GTM Playbook Angle
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {playbooks.map((pb) => (
+              <button
+                key={pb.id}
+                type="button"
+                onClick={() => applyPlaybook(pb)}
+                className={`px-2 py-1 text-[11px] font-medium rounded-[4px] border text-left transition-colors ${
+                  activePlaybookId === pb.id
+                    ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                    : 'bg-slate-50 text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
+                }`}
+              >
+                {pb.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Subject Line */}
+        <div>
+          <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+            Subject Line
+          </label>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => onChangeSubject(e.target.value)}
+            className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400 font-medium text-slate-900"
+          />
+        </div>
+
+        {/* Dynamic Variable Tokens */}
+        <div>
+          <div className="text-[10.5px] font-mono uppercase tracking-wider text-slate-400 mb-1">
+            Dynamic Merge Tokens
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[
+              '{{first_name}}',
+              '{{organization}}',
+              '{{title}}',
+              '{{region}}',
+              '{{custom_hook}}',
+              ...scopedCustomFields.map((cf) => `{{custom.${cf.field_key}}}`),
+            ].map((token) => (
+              <button
+                key={token}
+                type="button"
+                onClick={() => insertTokenAtCursor(token)}
+                className="px-1.5 py-0.5 text-[10.5px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-[4px] border border-[#E2E8F0]"
+              >
+                {token}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Message Body */}
+        <div>
+          <textarea
+            ref={textareaRef}
+            rows={12}
+            value={body}
+            onChange={(e) => onChangeBody(e.target.value)}
+            className="w-full p-3 text-xs leading-relaxed bg-white border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:border-slate-400 text-slate-800"
+          />
+        </div>
+
+        {/* Live Deliverability & Executive Scannability Linter */}
+        <div className="p-2.5 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-1.5 text-[11px]">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-slate-500">DELIVERABILITY &amp; LENGTH GUARD</span>
+            <span
+              className={`font-mono px-1.5 py-0.5 rounded text-[10.5px] border ${
+                wordCount <= 135
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-800 border-amber-200'
+              }`}
+            >
+              {wordCount} words {wordCount <= 135 ? '· Crisp Mobile Fit' : '· Consider Trimming'}
+            </span>
+          </div>
+          {coldLinkWarning && (
+            <div className="flex items-start gap-1.5 text-amber-800 text-[11px]">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-600" />
+              <span>
+                Cold <span className="font-mono">1 Lead</span> prospects are selected with a portal URL attached. Switch Portal Link to <strong>None</strong> on the right for highest Fortune 500 inbox placement.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===================================================================== */}
+      {/* PANE 3 (RIGHT · 4 COLS): RECIPIENT INSPECTOR, SENDER & DISPATCH       */}
+      {/* ===================================================================== */}
+      <div className="xl:col-span-4 bg-white border border-[#E2E8F0] rounded-[6px] p-4 space-y-3.5 sticky top-14">
+        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2.5">
+          <div>
+            <div className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+              03 · Recipient Inspector &amp; Dispatch
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              Verify rendered copy &amp; sender identity per recipient
+            </div>
+          </div>
+
+          {activeRecipients.length > 0 && (
+            <div className="flex items-center gap-1 text-xs">
+              <button
+                type="button"
+                onClick={() =>
+                  onChangePreviewIdx(
+                    previewIdx > 0 ? previewIdx - 1 : activeRecipients.length - 1
+                  )
+                }
+                className="p-1 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
+                aria-label="Previous recipient"
+              >
+                <ChevronLeft size={13} />
+              </button>
+              <span className="font-mono text-[11px] text-slate-700 px-1.5 tabular-nums">
+                {Math.min(previewIdx + 1, activeRecipients.length)} / {activeRecipients.length}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onChangePreviewIdx(
+                    previewIdx + 1 < activeRecipients.length ? previewIdx + 1 : 0
+                  )
+                }
+                className="p-1 rounded-[4px] border border-[#E2E8F0] hover:bg-slate-50"
+                aria-label="Next recipient"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Sender Identity, Deal Owner Routing, BCC & Portal Link Controls */}
+        <div className="p-3 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-2.5 text-xs">
+          <div>
+            <label className="block text-[10.5px] font-mono uppercase tracking-wider text-slate-500 mb-1">
+              Send From Identity
+            </label>
+            <select
+              value={sendFrom}
+              disabled={useAssignedOwnerSender}
+              onChange={(e) => onChangeSendFrom(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-xs font-medium text-slate-900 disabled:opacity-50"
+            >
+              {senderOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer text-[11px]">
+              <input
+                type="checkbox"
+                checked={useAssignedOwnerSender}
+                onChange={(e) => onChangeUseAssignedOwnerSender(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              <span className="font-medium text-slate-700 flex items-center gap-1">
+                <UserCheck size={12} className="text-indigo-600 shrink-0" />
+                Route via Deal Owner
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#E2E8F0] cursor-pointer text-[11px]">
+              <input
+                type="checkbox"
+                checked={bccEnabled}
+                onChange={(e) => onChangeBccEnabled(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              <span className="font-medium text-slate-700 flex items-center gap-1">
+                <Mail size={12} className="text-indigo-600 shrink-0" />
+                BCC Superhuman
+              </span>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
+            <span className="text-[11px] font-medium text-slate-700 flex items-center gap-1">
+              <Link2 size={12} className="text-slate-500" />
+              Portal Link:
+            </span>
+            <select
+              value={effectivePortalMode}
+              onChange={(e) => onChangePortalLinkMode(e.target.value as PortalLinkMode)}
+              className="bg-white border border-[#E2E8F0] rounded-[4px] px-2 py-1 text-[11px] font-medium text-slate-800"
+            >
+              <option value="none">None (Plain 1-to-1 Email)</option>
+              <option value={portalAttachValue}>
+                {domainScope === 'investor'
+                  ? 'Attach investor.fortifai.io'
+                  : 'Attach overview.fortifai.io'}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        {/* Live Rendered Email Preview + Inline Per-VIP Override */}
+        {activeRecipients.length === 0 ? (
+          <div className="py-12 text-center text-xs text-slate-400 border border-dashed border-[#E2E8F0] rounded-[5px]">
+            Select a contact or segment in Pane 1 to inspect rendered email copy.
+          </div>
+        ) : (
+          (() => {
+            const sample =
+              activeRecipients[Math.min(previewIdx, activeRecipients.length - 1)];
+            const resolvedFrom = resolveSenderForContact(sample);
+            const renderedBody = renderFinalPreviewBody(sample);
+            const isEditingThisVip = editingVipId === sample.id;
+
+            return (
+              <div className="space-y-2.5 text-xs">
+                <div className="bg-slate-50 border border-[#E2E8F0] rounded-[5px] p-2.5 space-y-1 text-[11.5px]">
+                  <div className="truncate">
+                    <span className="text-slate-400 font-mono">FROM:</span>{' '}
+                    <span className="font-mono text-slate-800">{resolvedFrom}</span>
+                  </div>
+                  <div className="truncate">
+                    <span className="text-slate-400 font-mono">TO:</span>{' '}
+                    <span className="font-medium text-slate-900">
+                      {sample.full_name} &lt;{sample.email}&gt;
+                    </span>
+                  </div>
+                  {bccEnabled && (
+                    <div className="truncate">
+                      <span className="text-slate-400 font-mono">BCC:</span>{' '}
+                      <span className="font-mono text-indigo-700">{currentUser.email}</span>
+                    </div>
+                  )}
+                  <div className="truncate">
+                    <span className="text-slate-400 font-mono">SUBJ:</span>{' '}
+                    <span className="font-medium text-slate-900">
+                      {renderTemplate(subject, sample)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Per-Recipient VIP Override Bar */}
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500">
+                    {vipBodyOverrides[sample.id] !== undefined
+                      ? 'Custom VIP override active for this contact'
+                      : aiHooksById[sample.id]
+                      ? 'AI hook injected for ' + sample.organization
+                      : 'Standard template preview'}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {vipBodyOverrides[sample.id] !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVipBodyOverrides((prev) => {
+                            const next = { ...prev };
+                            delete next[sample.id];
+                            return next;
+                          });
+                          setEditingVipId(null);
+                        }}
+                        className="text-slate-500 hover:underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isEditingThisVip) {
+                          setEditingVipId(null);
+                        } else {
+                          if (vipBodyOverrides[sample.id] === undefined) {
+                            setVipBodyOverrides((prev) => ({
+                              ...prev,
+                              [sample.id]: renderedBody,
+                            }));
+                          }
+                          setEditingVipId(sample.id);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-indigo-600 hover:underline font-medium"
+                    >
+                      <Edit3 size={11} />
+                      {isEditingThisVip ? 'Done Editing' : 'Customize VIP'}
+                    </button>
+                  </div>
+                </div>
+
+                {isEditingThisVip ? (
+                  <textarea
+                    rows={10}
+                    value={vipBodyOverrides[sample.id] ?? renderedBody}
+                    onChange={(e) =>
+                      setVipBodyOverrides((prev) => ({
+                        ...prev,
+                        [sample.id]: e.target.value,
+                      }))
+                    }
+                    className="w-full p-3 text-xs leading-relaxed bg-white border border-indigo-300 rounded-[5px] focus:outline-none text-slate-800"
+                  />
+                ) : (
+                  <div className="border border-[#E2E8F0] rounded-[5px] p-3.5 bg-white whitespace-pre-wrap leading-relaxed text-slate-800 max-h-[260px] overflow-y-auto">
+                    {renderedBody}
+                  </div>
+                )}
+              </div>
+            );
+          })()
+        )}
+
+        {/* Safe Mode Guard Status & Dispatch Buttons */}
+        <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
+          <div className="flex items-center justify-between text-[11px] text-slate-500">
+            <span className="inline-flex items-center gap-1 text-emerald-700 font-medium">
+              <ShieldCheck size={13} />
+              Safe Mode Guard Active
+            </span>
+            <span className="font-mono">
+              {verifiedSelectedCount} live · {blockedSelectedCount} guarded
+            </span>
+          </div>
+
+          {!canSendCampaigns && (
+            <div className="p-2 rounded-[4px] bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
+              <Lock size={12} className="shrink-0" />
+              <span>Campaign sending requires can_send_campaigns.</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={!canSendCampaigns || sendingTest || sendingBatch}
+              onClick={onSendTestToMe}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11.5px] font-medium text-slate-800 bg-white border border-[#E2E8F0] rounded-[4px] hover:bg-slate-50 disabled:opacity-40 transition-colors"
+            >
+              <Mail size={13} />
+              {sendingTest ? 'Sending...' : `Test (${testTargetEmail.split('@')[0]})`}
+            </button>
+
+            <button
+              type="button"
+              disabled={!canSendCampaigns || sendingBatch || sendingTest || activeRecipients.length === 0}
+              onClick={onSendBatch}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[11.5px] font-medium text-white bg-[#0D1520] rounded-[4px] hover:bg-slate-800 disabled:opacity-40 transition-colors"
+            >
+              <Send size={13} />
+              {sendingBatch
+                ? 'Dispatching...'
+                : `Send (${activeRecipients.length})`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
