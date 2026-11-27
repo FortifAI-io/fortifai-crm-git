@@ -360,6 +360,7 @@ function ScaleWorkspace({
 
   const activeUsers = useMemo(() => crmUsers.filter((u) => u.is_active), [crmUsers]);
 
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const requested = parseTabFromLocation();
     if (requested && canAccessTab(requested, perms, currentUser.role)) {
@@ -374,6 +375,16 @@ function ScaleWorkspace({
     if (typeof window === "undefined") return "light";
     return localStorage.getItem("fortifai_scale_theme") === "light" ? "light" : "dark";
   });
+
+  useEffect(() => {
+    try {
+      window.scrollTo(0, 0);
+      if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = 0;
+        mainScrollRef.current.scrollLeft = 0;
+      }
+    } catch {}
+  }, [activeTab]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -3356,7 +3367,7 @@ function ScaleWorkspace({
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Top Header Bar */}
         <header className="h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-20">
-          <div className="flex items-center gap-3 min-w-0">
+          <div ref={mainScrollRef} className="min-w-0 overflow-x-hidden flex items-center gap-3 min-w-0">
             <h1 className="text-[13.5px] font-semibold text-white tracking-tight truncate">
               {activeTab === 'customer_analytics' && (
                 <CmsText
@@ -3575,10 +3586,7 @@ function ScaleWorkspace({
 
         
         {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks') && (
-          <div
-            data-admin-subtabs="true"
-            className="px-6 pt-3 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-1.5 overflow-x-auto shrink-0"
-          >
+          <div data-admin-subtabs="true" className="w-full min-w-0 px-6 pt-3 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-2 overflow-x-auto shrink-0">
             {(currentUser.role === 'super_admin' ||
               authenticatedUser.email.toLowerCase() === 'varun@fortifai.io') && (
               <button
@@ -3953,6 +3961,8 @@ function ScaleWorkspace({
       {/* Slide-Over Contact Detail Drawer */}
       {selectedContact && (
         <ContactDrawer
+          allContacts={contacts}
+          onCreateAccountContact={handleAddContact}
           key={selectedContact.id}
           contact={selectedContact}
           currentUser={currentUser}

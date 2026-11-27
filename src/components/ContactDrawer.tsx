@@ -3,7 +3,6 @@ import {
   Building2,
   CheckCircle2,
   ExternalLink,
-  Mail,
   Plus,
   Send,
   Sparkles,
@@ -99,7 +98,6 @@ export function ContactDrawer({
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
 
-  // New Contact tagged to this Account form state
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -124,7 +122,6 @@ export function ContactDrawer({
     }, 1800);
   };
 
-  // All contacts sharing the same Account (organization)
   const accountContacts = useMemo(() => {
     if (!contact) return [];
     const orgKey = String(contact.organization || '').trim().toLowerCase();
@@ -150,8 +147,6 @@ export function ContactDrawer({
     flashSaved(feedbackLabel);
   };
 
-  // Propagate Account-level attributes (Industry, Tier, Fortune 500, US Listed, Fit Category, Region)
-  // to the current contact AND any sibling contacts under the same Account so the Account record stays unified
   const commitAccountPatch = (
     patch: Partial<Contact>,
     customFieldPatch?: Record<string, string | number | boolean>
@@ -199,13 +194,8 @@ export function ContactDrawer({
     const first = newFirstName.trim();
     const last = newLastName.trim();
     const full = [first, last].filter(Boolean).join(' ') || 'New Contact';
-    const email =
-      newEmail.trim().toLowerCase() ||
-      `${(first || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '')}.${Date.now().toString().slice(-4)}@${String(
-        contact.organization || 'account'
-      )
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')}.com`;
+    const email = newEmail.trim().toLowerCase();
+    if (!email) return;
 
     onCreateAccountContact({
       email,
@@ -267,9 +257,9 @@ export function ContactDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-[1px]">
-      <div className="w-full max-w-[640px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] shadow-2xl flex flex-col text-[var(--tx-primary)]">
-        {/* Top Record Header (Salesforce Record Banner Style) */}
-        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)]/70 flex items-start justify-between gap-3 shrink-0">
+      <div className="w-full max-w-[660px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] shadow-2xl flex flex-col text-[var(--tx-primary)]">
+        {/* Salesforce-Grade Account & Contact Header */}
+        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)]/80 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
               <span className="px-2 py-0.5 rounded font-semibold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/30">
@@ -302,7 +292,8 @@ export function ContactDrawer({
               {contact.organization || 'Unnamed Account'}
             </h2>
             <p className="text-xs text-[var(--tx-secondary)] truncate">
-              Primary Contact: <span className="font-semibold text-[var(--tx-primary)]">{contact.full_name}</span>
+              Active Contact:{' '}
+              <span className="font-semibold text-[var(--tx-primary)]">{contact.full_name}</span>
               {contact.title ? ` · ${contact.title}` : ''} ·{' '}
               <span className="font-mono text-[11px] text-sky-400">{contact.email}</span>
             </p>
@@ -318,9 +309,9 @@ export function ContactDrawer({
           </button>
         </div>
 
-        {/* Scrollable Body */}
+        {/* Scrollable Form Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
-          {/* SECTION 1: ACCOUNT MASTER ATTRIBUTES (ALL EDITABLE & DB-SYNCED) */}
+          {/* SECTION 1: ACCOUNT PROFILE & CLASSIFICATION */}
           <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
               <div className="flex items-center gap-1.5 font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
@@ -328,13 +319,14 @@ export function ContactDrawer({
                 Account Profile &amp; Classification
               </div>
               <span className="text-[10.5px] text-[var(--tx-muted)]">
-                Applies across all {accountContacts.length} account {accountContacts.length === 1 ? 'contact' : 'contacts'}
+                Syncs across {accountContacts.length}{' '}
+                {accountContacts.length === 1 ? 'contact' : 'contacts'}
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="space-y-1">
-                <span className="text-[11px] text-[var(--tx-muted)]">Account / Organization Name</span>
+                <span className="text-[11px] text-[var(--tx-muted)]">Account / Organization</span>
                 <input
                   type="text"
                   disabled={!canEdit}
@@ -377,9 +369,7 @@ export function ContactDrawer({
                 <select
                   disabled={!canEdit}
                   value={fitCategoryVal}
-                  onChange={(e) =>
-                    commitAccountPatch({}, { fit_category: e.target.value })
-                  }
+                  onChange={(e) => commitAccountPatch({}, { fit_category: e.target.value })}
                   className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
                 >
                   {FIT_CATEGORIES.map((cat) => (
@@ -395,9 +385,7 @@ export function ContactDrawer({
                 <select
                   disabled={!canEdit}
                   value={usListedVal}
-                  onChange={(e) =>
-                    commitAccountPatch({}, { us_listed: e.target.value })
-                  }
+                  onChange={(e) => commitAccountPatch({}, { us_listed: e.target.value })}
                   className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
                 >
                   <option value="Yes">Yes (US Listed)</option>
@@ -439,7 +427,7 @@ export function ContactDrawer({
               </label>
 
               <label className="space-y-1">
-                <span className="text-[11px] text-[var(--tx-muted)]">HQ / Location &amp; ICP Score</span>
+                <span className="text-[11px] text-[var(--tx-muted)]">HQ Location &amp; ICP Score</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -460,7 +448,7 @@ export function ContactDrawer({
                         icp_score: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                       })
                     }
-                    title="ICP Fit Score (0-100)"
+                    title="ICP Score (0-100)"
                     className="w-16 px-2 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-right font-mono text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
                   />
                 </div>
@@ -468,7 +456,7 @@ export function ContactDrawer({
             </div>
           </div>
 
-          {/* SECTION 2: ASSOCIATED ACCOUNT CONTACTS (BUYING COMMITTEE) + ADD CONTACT */}
+          {/* SECTION 2: ASSOCIATED ACCOUNT CONTACTS & ADD CONTACT TO ACCOUNT */}
           <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2">
               <div className="flex items-center gap-1.5 font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
@@ -614,10 +602,10 @@ export function ContactDrawer({
             </div>
           </div>
 
-          {/* SECTION 3: ACTIVE CONTACT DETAILS & OPPORTUNITY PIPELINE */}
+          {/* SECTION 3: ACTIVE CONTACT & DEAL OPPORTUNITY */}
           <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
             <div className="font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px] border-b border-[var(--border-subtle)] pb-2">
-              Contact Record &amp; Deal Opportunity ({contact.full_name})
+              Contact Details &amp; Opportunity ({contact.full_name})
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -760,7 +748,7 @@ export function ContactDrawer({
                     disabled={!canEdit}
                     value={contact.expected_close || ''}
                     onChange={(e) => commitPatch({ expected_close: e.target.value })}
-                    className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                    className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
                   >
                     <option value="">—</option>
                     {CLOSE_QUARTERS.filter(Boolean).map((q) => (
@@ -811,7 +799,7 @@ export function ContactDrawer({
             </div>
           </div>
 
-          {/* SECTION 4: QUICK NOTES & ACTIVITY LOG */}
+          {/* SECTION 4: QUICK NOTES */}
           <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">

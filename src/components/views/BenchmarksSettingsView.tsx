@@ -194,7 +194,7 @@ export function BenchmarksSettingsView({
   }
 
   return (
-    <div className="p-6 max-w-[1440px] w-full mx-auto space-y-5">
+    <div className="p-6 w-full min-w-0 max-w-[1380px] space-y-5">
       {/* Executive Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
