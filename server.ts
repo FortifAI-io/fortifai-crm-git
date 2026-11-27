@@ -725,37 +725,37 @@ function escapeHtmlBasic(str: string): string {
 
       const htmlBody = `<!DOCTYPE html>
 <html>
-  <body style="margin:0;padding:24px;background-color:#090F17;font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Roboto,sans-serif;color:#E2E8F0;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:540px;margin:0 auto;background-color:#0F1724;border:1px solid #1E2D42;border-radius:12px;overflow:hidden;">
+  <body style="margin:0;padding:28px 16px;background-color:#FFFFFF;font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Roboto,sans-serif;color:#1E293B;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:540px;margin:0 auto;background-color:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px;overflow:hidden;">
       <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #1E2D42;">
-          <div style="font-size:18px;font-weight:700;color:#F8FAFC;letter-spacing:-0.01em;">
+        <td style="padding:20px 28px;border-bottom:1px solid #E5E7EB;background-color:#FFFFFF;">
+          <div style="font-size:17px;font-weight:600;color:#0F172A;letter-spacing:-0.01em;">
             Join Fortifai Scale (Beta)
           </div>
         </td>
       </tr>
       <tr>
-        <td style="padding:24px 28px;font-size:14px;line-height:1.6;color:#CBD5E1;">
-          <p style="margin:0 0 14px 0;color:#F8FAFC;">Hi ${escapeHtmlBasic(firstName)},</p>
+        <td style="padding:24px 28px;font-size:14px;line-height:1.6;color:#334155;background-color:#FFFFFF;">
+          <p style="margin:0 0 14px 0;color:#0F172A;">Hi ${escapeHtmlBasic(firstName)},</p>
           <p style="margin:0 0 16px 0;">
-            Fortifai Marketing has invited you to join <strong style="color:#F8FAFC;">Fortifai Scale (Beta)</strong>, our in-house Customer Relationship Management portal.
+            Fortifai Marketing has invited you to join <strong style="color:#0F172A;">Fortifai Scale (Beta)</strong>, our in-house Customer Relationship Management portal.
           </p>
-          <ul style="margin:0 0 22px 0;padding-left:18px;color:#E2E8F0;">
-            <li style="margin-bottom:6px;"><strong>Your Login Email:</strong> <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#38BDF8;">${escapeHtmlBasic(email)}</span></li>
+          <ul style="margin:0 0 22px 0;padding-left:18px;color:#1E293B;">
+            <li style="margin-bottom:6px;"><strong>Your Login Email:</strong> <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#2E5A8A;">${escapeHtmlBasic(email)}</span></li>
             <li><strong>Your Allocated Role:</strong> ${escapeHtmlBasic(allocatedRoleLabel)}</li>
           </ul>
           <div style="margin:0 0 22px 0;">
-            <a href="${setupLink}" style="display:inline-block;padding:12px 20px;background-color:#38BDF8;color:#090F17;font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+            <a href="${setupLink}" style="display:inline-block;padding:11px 20px;background-color:#2E5A8A;color:#FFFFFF;font-size:13.5px;font-weight:600;text-decoration:none;border-radius:6px;">
               Activate Account &amp; Set Password &rarr; (Join Now)
             </a>
           </div>
-          <p style="margin:0 0 6px 0;font-size:12px;color:#94A3B8;">
+          <p style="margin:0 0 6px 0;font-size:12.5px;color:#64748B;">
             Or use this direct link (valid for 7 days):
           </p>
-          <p style="margin:0 0 22px 0;font-size:12px;word-break:break-all;">
-            <a href="${setupLink}" style="color:#38BDF8;text-decoration:underline;">${setupLink}</a>
+          <p style="margin:0 0 22px 0;font-size:12.5px;word-break:break-all;">
+            <a href="${setupLink}" style="color:#2E5A8A;text-decoration:underline;">${setupLink}</a>
           </p>
-          <p style="margin:0;font-size:13px;color:#94A3B8;">
+          <p style="margin:0;font-size:13.5px;color:#475569;">
             &mdash; Fortifai Marketing Team
           </p>
         </td>
