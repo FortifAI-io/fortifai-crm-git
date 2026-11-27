@@ -124,6 +124,9 @@ export function CustomersView({
   const [density, setDensity] = useTableDensity('fortifai_customers_density_v1');
   const densityCls = TABLE_DENSITY_CLASSES[density];
 
+  const [f500QuickOnly, setF500QuickOnly] = useState(false);
+  const [usListedQuickOnly, setUsListedQuickOnly] = useState(false);
+  const [bestFitQuickOnly, setBestFitQuickOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [sortState, setSortState] = useState<ColumnSortState | null>(null);
 
@@ -405,9 +408,6 @@ export function CustomersView({
       : 0;
 
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [f500QuickOnly, setF500QuickOnly] = useState(false);
-  const [usListedQuickOnly, setUsListedQuickOnly] = useState(false);
-  const [bestFitQuickOnly, setBestFitQuickOnly] = useState(false);
   const [usListedFilter, setUsListedFilter] = useState<string[] | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string[] | null>(null);
 
