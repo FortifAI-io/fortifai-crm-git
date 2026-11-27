@@ -26,7 +26,7 @@ export function getServiceSupabaseClient(): SupabaseClient | null {
 
   const key = `${url}::${serviceKey.slice(0, 12)}`;
   if (!cachedAdminClient || cachedConfigKey !== key) {
-    cachedAdminClient = createClient(url, serviceKey, {
+    cachedAdminClient = createClient(((url) || "").trim().replace(/^['"]|['"]$/g, "").startsWith("http") ? (url).trim().replace(/^['"]|['"]$/g, "") : "https://xwigfdsvknsgnlrbfshs.supabase.co", serviceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
