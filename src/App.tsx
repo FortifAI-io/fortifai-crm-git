@@ -310,7 +310,8 @@ function ScaleWorkspace({
     }
     return getDefaultTabForPermissions(perms, currentUser.role);
   });
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return localStorage.getItem("fortifai_scale_theme") === "dark" ? "dark" : "light";
@@ -2816,78 +2817,62 @@ function ScaleWorkspace({
       onNotify={showToast}
     >
       <div className="min-h-screen flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
-        {/* Deep Navy Sidebar (#0D1520) */}
+        {/* Deep Navy 52px Icon Rail (#0D1520) with Instant Hover Tooltips */}
         <aside
           className={`${
-            sidebarCollapsed ? 'w-[52px]' : 'w-[206px]'
-          } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 min-h-screen sticky top-0 h-screen`}
+            sidebarCollapsed ? "w-[52px]" : "w-[206px]"
+          } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 min-h-screen sticky top-0 h-screen z-30 select-none`}
         >
-          <div className="h-[46px] px-3 flex items-center justify-between border-b border-[#1E2D42] shrink-0">
-            {!sidebarCollapsed && (
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span
-                  className="inline-block w-[11px] h-[14px] bg-[#6699CC] shrink-0"
-                  style={{ clipPath: "polygon(0% 22%, 100% 0%, 100% 100%, 0% 100%)" }}
-                />
-                <div className="min-w-0">
-                  <div className="text-white font-semibold text-sm tracking-tight leading-none truncate">
-                    <CmsText
-                      id="shell.brand_name"
-                      defaultValue="Fortifai Scale"
-                      section="Header & Sidebar"
-                    />
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1 truncate">
-                    <CmsText
-                      id={
-                        perms.can_view_investors && perms.can_view_customers
-                          ? 'shell.brand_subtitle_all'
-                          : perms.can_view_investors
-                          ? 'shell.brand_subtitle_investor'
-                          : 'shell.brand_subtitle_customer'
-                      }
-                      defaultValue={
-                        perms.can_view_investors && perms.can_view_customers
-                          ? 'Revenue & Investor OS'
-                          : perms.can_view_investors
-                          ? 'Seed Fundraising OS'
-                          : 'Enterprise Revenue OS'
-                      }
-                      section="Header & Sidebar"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* Top Brand + Expand/Collapse Rail Button */}
+          <div className="h-[46px] px-2.5 flex items-center justify-between border-b border-[#1E2D42] shrink-0">
             <button
               type="button"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => setSidebarCollapsed((prev) => !prev)}
+              className="group relative flex items-center gap-2.5 min-w-0 p-1.5 rounded-md hover:bg-white/5 transition-colors"
+              title={sidebarCollapsed ? "Expand navigation rail" : "Collapse to icon rail"}
+              aria-label={sidebarCollapsed ? "Expand navigation rail" : "Collapse to icon rail"}
             >
-              {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              <span
+                className="inline-block w-[12px] h-[15px] bg-[#6699CC] shrink-0"
+                style={{ clipPath: "polygon(0% 22%, 100% 0%, 100% 100%, 0% 100%)" }}
+              />
+              {!sidebarCollapsed && (
+                <div className="min-w-0 text-left">
+                  <div className="text-white font-semibold text-[13px] tracking-tight leading-none truncate">
+                    <CmsText id="shell.brand_name" defaultValue="Fortifai Scale" section="Header & Sidebar" />
+                  </div>
+                </div>
+              )}
+              {sidebarCollapsed && (
+                <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 fixed left-[60px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
+                  Expand Sidebar
+                </span>
+              )}
             </button>
+            {!sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                title="Collapse to 52px icon rail"
+              >
+                <ChevronLeft size={15} />
+              </button>
+            )}
           </div>
 
-          {/* Scrollable Navigation Rail */}
-          <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-1">
-            {/* CUSTOMER Collapsible Domain Group (omitted from DOM unless can_view_customers) */}
+          {/* Icon-First Navigation Rail with Hover Tooltips */}
+          <nav className="flex-1 overflow-y-auto overflow-x-visible py-2.5 px-2 flex flex-col gap-1">
             {perms.can_view_customers && (
-              <div className="space-y-1 mb-3">
+              <div className="space-y-1">
                 {!sidebarCollapsed && (
                   <button
                     type="button"
                     onClick={() => setCustomerSectionOpen((prev) => !prev)}
-                    className="w-full flex items-center justify-between px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
-                    aria-expanded={customerSectionOpen}
+                    className="w-full flex items-center justify-between px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
                   >
-                    <CmsText
-                      id="sidebar.section.customer"
-                      defaultValue="Customer"
-                      section="Header & Sidebar"
-                    />
-                    {customerSectionOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                    <CmsText id="sidebar.section.customer" defaultValue="Customer" section="Header & Sidebar" />
+                    {customerSectionOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                   </button>
                 )}
                 {(sidebarCollapsed || customerSectionOpen) &&
@@ -2895,29 +2880,29 @@ function ScaleWorkspace({
                     const Icon = item.icon;
                     const isActive =
                       activeTab === item.id ||
-                      (item.id === 'customers' && activeTab === 'customer_analytics');
+                      (item.id === "customers" && activeTab === "customer_analytics");
                     return (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => navigateToTab(item.id)}
-                        className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
+                        className={`group relative w-full flex items-center ${
+                          sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
+                        } rounded-[6px] text-left transition-colors ${
                           isActive
-                            ? 'bg-white/10 text-white font-medium'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                            ? "bg-[#1B2B44] text-white font-medium shadow-inner"
+                            : "text-slate-400 hover:text-white hover:bg-white/5"
                         }`}
                       >
-                        <Icon size={16} className={isActive ? 'text-sky-400 shrink-0' : 'shrink-0'} />
-                        {!sidebarCollapsed && (
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[13px] truncate">
-                              <CmsText
-                                id={`sidebar.nav.${item.id}`}
-                                defaultValue={item.label}
-                                section="Header & Sidebar"
-                              />
-                            </div>
-                          </div>
+                        <Icon size={16} className={isActive ? "text-sky-400 shrink-0" : "shrink-0"} />
+                        {!sidebarCollapsed ? (
+                          <span className="text-[12.5px] truncate">
+                            <CmsText id={`sidebar.nav.${item.id}`} defaultValue={item.label} section="Header & Sidebar" />
+                          </span>
+                        ) : (
+                          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
+                            {item.label}
+                          </span>
                         )}
                       </button>
                     );
@@ -2925,159 +2910,209 @@ function ScaleWorkspace({
               </div>
             )}
 
-          {/* INVESTOR Collapsible Domain Group (omitted from DOM unless can_view_investors) */}
-          {perms.can_view_investors && (
-            <div className="space-y-1 mb-3">
-              {!sidebarCollapsed && (
+            {perms.can_view_customers && perms.can_view_investors && (
+              <div className="my-1.5 border-t border-slate-800/80 mx-1" />
+            )}
+
+            {perms.can_view_investors && (
+              <div className="space-y-1">
+                {!sidebarCollapsed && (
+                  <button
+                    type="button"
+                    onClick={() => setInvestorSectionOpen((prev) => !prev)}
+                    className="w-full flex items-center justify-between px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+                  >
+                    <CmsText id="sidebar.section.investor" defaultValue="Investor" section="Header & Sidebar" />
+                    {investorSectionOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  </button>
+                )}
+                {(sidebarCollapsed || investorSectionOpen) &&
+                  investorNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => navigateToTab(item.id)}
+                        className={`group relative w-full flex items-center ${
+                          sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
+                        } rounded-[6px] text-left transition-colors ${
+                          isActive
+                            ? "bg-[#1B2B44] text-white font-medium shadow-inner"
+                            : "text-slate-400 hover:text-white hover:bg-white/5"
+                        }`}
+                      >
+                        <Icon size={16} className={isActive ? "text-sky-400 shrink-0" : "shrink-0"} />
+                        {!sidebarCollapsed ? (
+                          <span className="text-[12.5px] truncate">
+                            <CmsText id={`sidebar.nav.${item.id}`} defaultValue={item.label} section="Header & Sidebar" />
+                          </span>
+                        ) : (
+                          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
+                            {item.label}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* Bottom Governance Icons (Admin & Connections/Sync) */}
+            <div className="mt-auto pt-2 border-t border-slate-800/80 space-y-1">
+              {perms.can_manage_users && (
                 <button
                   type="button"
-                  onClick={() => setInvestorSectionOpen((prev) => !prev)}
-                  className="w-full flex items-center justify-between px-3 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
-                  aria-expanded={investorSectionOpen}
+                  onClick={() => navigateToTab("admin")}
+                  className={`group relative w-full flex items-center ${
+                    sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
+                  } rounded-[6px] text-left transition-colors ${
+                    activeTab === "admin"
+                      ? "bg-[#1B2B44] text-white font-medium"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  }`}
                 >
-                  <CmsText
-                    id="sidebar.section.investor"
-                    defaultValue="Investor"
-                    section="Header & Sidebar"
-                  />
-                  {investorSectionOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <Shield size={16} className={activeTab === "admin" ? "text-sky-400 shrink-0" : "shrink-0"} />
+                  {!sidebarCollapsed ? (
+                    <span className="text-[12.5px] truncate">Admin & RBAC</span>
+                  ) : (
+                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
+                      Admin & RBAC
+                    </span>
+                  )}
                 </button>
               )}
-              {(sidebarCollapsed || investorSectionOpen) &&
-                investorNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => navigateToTab(item.id)}
-                      className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
-                        isActive
-                          ? 'bg-white/10 text-white font-medium'
-                          : 'text-slate-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      <Icon size={16} className={isActive ? 'text-sky-400 shrink-0' : 'shrink-0'} />
-                      {!sidebarCollapsed && (
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[13px] truncate">
-                            <CmsText
-                              id={`sidebar.nav.${item.id}`}
-                              defaultValue={item.label}
-                              section="Header & Sidebar"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
+              {currentUser.role === "super_admin" && (
+                <button
+                  type="button"
+                  onClick={() => navigateToTab("settings")}
+                  className={`group relative w-full flex items-center ${
+                    sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
+                  } rounded-[6px] text-left transition-colors ${
+                    activeTab === "settings"
+                      ? "bg-[#1B2B44] text-white font-medium"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <Settings size={16} className={activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"} />
+                  {!sidebarCollapsed ? (
+                    <span className="text-[12.5px] truncate">Connections & Sync</span>
+                  ) : (
+                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
+                      Connections & Sync
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
-          )}
+          </nav>
 
-          {/* Bottom Pinned Governance & Integrations */}
-          <div className="mt-auto pt-3 border-t border-slate-800/80 space-y-1">
-            {perms.can_manage_users && (
-              <button
-                type="button"
-                onClick={() => navigateToTab('admin')}
-                className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
-                  activeTab === 'admin'
-                    ? 'bg-white/10 text-white font-medium'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Shield
-                  size={16}
-                  className={activeTab === 'admin' ? 'text-sky-400 shrink-0' : 'shrink-0'}
-                />
-                {!sidebarCollapsed && (
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] truncate">
-                      <CmsText
-                        id="sidebar.nav.admin"
-                        defaultValue="Admin & RBAC"
-                        section="Header & Sidebar"
-                      />
-                    </div>
-                  </div>
-                )}
-              </button>
-            )}
-            {currentUser.role === 'super_admin' && (
-<button
+          {/* Bottom User Avatar + Popover Menu (Theme, Portals, Sign Out) */}
+          <div className="relative p-2 border-t border-slate-800/80 shrink-0">
+            <button
               type="button"
-              onClick={() => navigateToTab('settings')}
-              className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
-                activeTab === 'settings'
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
-              }`}
+              onClick={() => setAccountMenuOpen((prev) => !prev)}
+              className={`group w-full flex items-center ${
+                sidebarCollapsed ? "justify-center py-1" : "gap-2.5 px-2 py-1.5"
+              } rounded-md hover:bg-white/5 transition-colors`}
+              title="Account, Theme & Portals"
             >
-              <Settings
-                size={16}
-                className={activeTab === 'settings' ? 'text-sky-400 shrink-0' : 'shrink-0'}
-              />
+              <div className="h-7 w-7 rounded-full bg-[#1E3A5F] border border-sky-400/30 text-sky-200 flex items-center justify-center text-[11px] font-semibold shrink-0">
+                {(currentUser.full_name || "U")
+                  .split(" ")
+                  .map((p) => p[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase()}
+              </div>
               {!sidebarCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] truncate">
-                    <CmsText
-                      id="sidebar.nav.settings"
-                      defaultValue="Connections & Sync"
-                      section="Header & Sidebar"
-                    />
-                  </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="text-[12px] text-white font-medium truncate">{currentUser.full_name}</div>
+                  <div className="text-[10px] text-slate-400 font-mono truncate">{currentUser.role}</div>
                 </div>
               )}
             </button>
+
+            {accountMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setAccountMenuOpen(false)}
+                />
+                <div className="absolute bottom-12 left-2 w-64 bg-[#0F172A] border border-slate-700/90 rounded-lg shadow-2xl p-3 space-y-2.5 text-xs z-50 text-slate-200">
+                  <div className="pb-2 border-b border-slate-800">
+                    <div className="font-semibold text-white truncate">{currentUser.full_name}</div>
+                    <div className="text-[11px] text-slate-400 font-mono truncate">{currentUser.email}</div>
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] font-mono">
+                      {currentUser.role}
+                    </span>
+                  </div>
+
+                  {/* Theme Switcher inside Account Popover */}
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-slate-400 text-[11.5px]">Appearance</span>
+                    <div className="inline-flex rounded-md bg-[#090F17] p-0.5 border border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setTheme("light")}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                          theme === "light" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <Sun size={11} />
+                        Light
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTheme("dark")}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                          theme === "dark" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <Moon size={11} />
+                        Dark
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Connected Portals Status */}
+                  <div className="pt-2 border-t border-slate-800 space-y-1 text-[11px]">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                      Connected Portals
+                    </div>
+                    {perms.can_view_customers && (
+                      <div className="flex items-center justify-between text-slate-300">
+                        <span className="truncate">overview.fortifai.io</span>
+                        <span className="text-emerald-400 text-[10px]">● Live</span>
+                      </div>
+                    )}
+                    {perms.can_view_investors && (
+                      <div className="flex items-center justify-between text-slate-300">
+                        <span className="truncate">investor.fortifai.io</span>
+                        <span className="text-emerald-400 text-[10px]">● Live</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        setIsSignedOut(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 transition-colors text-[12px] font-medium"
+                    >
+                      <LogOut size={13} />
+                      Sign out / Switch account
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
-        </nav>
-
-        {!sidebarCollapsed && (
-          <div className="p-4 border-t border-slate-800/80 space-y-3 text-xs shrink-0">
-            <div className="space-y-1.5">
-              <div className="text-[11px] tracking-wider text-slate-500 font-semibold">
-                <CmsText
-                  id="sidebar.portals_heading"
-                  defaultValue="Connected Portals"
-                  section="Header & Sidebar"
-                />
-              </div>
-              {perms.can_view_customers && (
-                <div className="flex items-center justify-between text-slate-300">
-                  <span className="truncate">overview.fortifai.io</span>
-                  <span className="text-emerald-400 text-[11px] shrink-0">Active</span>
-                </div>
-              )}
-              {perms.can_view_investors && (
-                <div className="flex items-center justify-between text-slate-300">
-                  <span className="truncate">investor.fortifai.io</span>
-                  <span className="text-emerald-400 text-[11px] shrink-0">Active</span>
-                </div>
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-white font-medium truncate">{currentUser.full_name}</div>
-                <div className="text-[10px] text-slate-400 font-mono truncate">
-                  {currentUser.email} · {currentUser.role}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsSignedOut(true)}
-                title="Sign out / Switch Fortifai account"
-                className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 shrink-0"
-              >
-                <LogOut size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-      </aside>
+        </aside>
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 flex flex-col">
@@ -3170,9 +3205,6 @@ function ScaleWorkspace({
                 />
               )}
             </h1>
-            <span className="hidden 2xl:inline-block text-[11px] font-mono text-slate-400 whitespace-nowrap">
-              · {currentUser.email} ({currentUser.role})
-            </span>
           </div>
 
           <GlobalSearchBar
@@ -3194,16 +3226,6 @@ function ScaleWorkspace({
               </button>
             )}
             <LiveCmsHeaderButton />
-            <button
-              type="button"
-              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-medium text-slate-200 bg-[#152033] border border-[#263852] rounded-[4px] hover:bg-[#1E2D42] hover:text-white transition-colors whitespace-nowrap shrink-0"
-              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-              aria-label={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-            >
-              {theme === "dark" ? <Sun size={13} className="text-amber-400" /> : <Moon size={13} className="text-sky-300" />}
-              <span className="hidden md:inline">{theme === "dark" ? "Light" : "Dark"}</span>
-            </button>
             <button
               type="button"
               onClick={() => setIsAskMeOpen((prev) => !prev)}
