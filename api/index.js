@@ -1867,6 +1867,11 @@ app.post("/api/crm/upsert-contact", async (req, res) => {
       return res.status(500).json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY missing on server." });
     }
     const email = String(contact.email || "").trim().toLowerCase() || `pending.${String(contact.organization || contact.id || Date.now()).toLowerCase().replace(/[^a-z0-9]+/g, "-")}@pipeline.fortifai.local`;
+    const resolvedCloseQtr = contact.expected_close ?? contact.close_qtr ?? contact.custom_fields?.expected_close ?? contact.custom_fields?.close_qtr ?? null;
+    const mergedCustomFields = {
+      ...contact.custom_fields || {},
+      ...resolvedCloseQtr !== null ? { expected_close: resolvedCloseQtr, close_qtr: resolvedCloseQtr } : {}
+    };
     const contactRow = {
       email,
       first_name: contact.first_name ?? null,
@@ -1886,14 +1891,14 @@ app.post("/api/crm/upsert-contact", async (req, res) => {
       relationship_strength: contact.relationship_strength ?? null,
       tags: Array.isArray(contact.tags) ? contact.tags : [],
       unsubscribed: Boolean(contact.unsubscribed),
-      custom_fields: contact.custom_fields ?? {}
+      custom_fields: mergedCustomFields
     };
     const { data: savedContact, error: cErr } = await sbAdmin.from("contacts").upsert(contactRow, { onConflict: "email" }).select("*").single();
     if (cErr) {
       return res.status(502).json({ ok: false, error: cErr.message });
     }
     if (savedContact?.id) {
-      const oppRow = {
+      const oppPayload = {
         contact_id: savedContact.id,
         opportunity_type: savedContact.contact_type === "investor" ? "seed_investment" : "enterprise_deal",
         stage: contact.stage || "1 Lead",
@@ -1902,15 +1907,23 @@ app.post("/api/crm/upsert-contact", async (req, res) => {
         product_or_instrument: contact.product_or_instrument ?? null,
         amount_usd: Number(contact.amount_usd ?? 0),
         probability: Number(contact.probability ?? 0),
-        expected_close: contact.expected_close ?? null,
+        expected_close: resolvedCloseQtr,
         next_step: contact.next_step ?? null,
         notes: contact.notes ?? null,
         owner_email: contact.owner_email || "varun@fortifai.io",
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
-      const { error: oErr } = await sbAdmin.from("opportunities").upsert(oppRow, { onConflict: "contact_id" });
-      if (oErr) {
-        return res.status(502).json({ ok: false, error: "opportunities: " + oErr.message });
+      const { data: existingOpp } = await sbAdmin.from("opportunities").select("id").eq("contact_id", savedContact.id).limit(1).maybeSingle();
+      if (existingOpp?.id) {
+        const { error: uErr } = await sbAdmin.from("opportunities").update(oppPayload).eq("id", existingOpp.id);
+        if (uErr) {
+          return res.status(502).json({ ok: false, error: "opportunities update: " + uErr.message });
+        }
+      } else {
+        const { error: iErr } = await sbAdmin.from("opportunities").insert(oppPayload);
+        if (iErr) {
+          return res.status(502).json({ ok: false, error: "opportunities insert: " + iErr.message });
+        }
       }
     }
     return res.status(200).json({ ok: true, contact: savedContact });
