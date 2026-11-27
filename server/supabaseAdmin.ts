@@ -1,3 +1,14 @@
+function resolveSbUrl(raw?: string): string {
+  const cleaned = String(raw || "").trim().replace(/^['"]|['"]$/g, "");
+  if (cleaned) {
+    const withProto = /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
+    try {
+      const u = new URL(withProto);
+      if (u.hostname.includes(".")) return u.origin;
+    } catch {}
+  }
+  return "https://xwigfdsvknsgnlrbfshs.supabase.co";
+}
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { CrmUser, UserPermissions, UserRole } from '../src/types/crm';
 
@@ -26,7 +37,7 @@ export function getServiceSupabaseClient(): SupabaseClient | null {
 
   const key = `${url}::${serviceKey.slice(0, 12)}`;
   if (!cachedAdminClient || cachedConfigKey !== key) {
-    cachedAdminClient = createClient(((url) || "").trim().replace(/^['"]|['"]$/g, "").startsWith("http") ? (url).trim().replace(/^['"]|['"]$/g, "") : "https://xwigfdsvknsgnlrbfshs.supabase.co", serviceKey, {
+    cachedAdminClient = createClient(resolveSbUrl(((url) || "").trim().replace(/^['"]|['"]$/g), "").startsWith("http") ? (url).trim().replace(/^['"]|['"]$/g, "") : "https://xwigfdsvknsgnlrbfshs.supabase.co", serviceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
