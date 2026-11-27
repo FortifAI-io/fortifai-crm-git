@@ -373,6 +373,40 @@ export function PipelineHealthView({
     );
     const stage4PlusArr = stage4PlusDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
 
+    const buildQuarterBaseline = (qLabel: "Q1 2027" | "Q2 2027") => {
+      const weightPct = rules.quarterWeights?.[qLabel] ?? (qLabel === "Q1 2027" ? 8.33 : 16.67);
+      const qTargetArr = Math.round((arrTarget2027 * weightPct) / 100);
+      const qRequiredArr = Math.round(qTargetArr * coverageMultiple);
+      const qDeals = activeCustomers.filter(
+        (c) => String(c.expected_close || "").trim() === qLabel
+      );
+      const qOpenArr = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
+      const qWeightedArr = qDeals.reduce((s, d) => {
+        const st = String(d.stage || "").trim();
+        const prob = /^7\b|closed won/i.test(st)
+          ? 100
+          : Number(d.probability ?? rules.stageWinProbs[st] ?? 0);
+        return s + Math.round(((d.amount_usd || 0) * prob) / 100);
+      }, 0);
+      const qStage4Count = qDeals.filter((c) =>
+        /^[4-7]\b|decisionmaker|internal review|commercial|contracting|closed won/i.test(
+          String(c.stage || "").trim()
+        )
+      ).length;
+      const qAttainmentPct = qTargetArr > 0 ? Math.round((qWeightedArr / qTargetArr) * 1000) / 10 : 0;
+
+      return {
+        quarter: qLabel,
+        targetArr: qTargetArr,
+        requiredArr: qRequiredArr,
+        openArr: qOpenArr,
+        dealsCount: qDeals.length,
+        weightedArr: qWeightedArr,
+        attainmentPct: qAttainmentPct,
+        stage4Count: qStage4Count,
+      };
+    };
+
     return {
       targetArr: arrTarget2027,
       targetClosedDeals,
@@ -384,8 +418,10 @@ export function PipelineHealthView({
       weightedAttainmentPct: pipelineAnalytics.weightedAttainmentPct,
       stage4PlusCount: stage4PlusDeals.length,
       stage4PlusArr,
+      q1: buildQuarterBaseline("Q1 2027"),
+      q2: buildQuarterBaseline("Q2 2027"),
     };
-  }, [contacts, pipelineAnalytics, arrTarget2027, avgAcvAssumption, coverageMultiple]);
+  }, [contacts, pipelineAnalytics, arrTarget2027, avgAcvAssumption, coverageMultiple, rules]);
 
   return (
     <div className="p-5 space-y-5 max-w-[1600px] w-full mx-auto">
@@ -472,6 +508,51 @@ export function PipelineHealthView({
               {formatMillions(baselineSnapshot.stage4PlusArr)} in Stage 4–7
             </div>
           </div>
+        </div>
+
+        {/* Q1 2027 & Q2 2027 Near-Term Baseline Strip */}
+        <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {[baselineSnapshot.q1, baselineSnapshot.q2].map((qItem) => (
+            <div
+              key={qItem.quarter}
+              className="px-3.5 py-2.5 rounded-lg bg-[var(--bg-canvas)]/60 border border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-3"
+            >
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-400">
+                  {qItem.quarter} Baseline
+                </div>
+                <div className="mt-0.5 text-xs text-[var(--tx-secondary)] tabular-nums">
+                  Target <span className="font-semibold text-[var(--tx-primary)]">{formatMillions(qItem.targetArr)}</span>
+                  {" · "}Req ({coverageMultiple}x) <span className="font-semibold text-[var(--tx-primary)]">{formatMillions(qItem.requiredArr)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-right tabular-nums">
+                <div>
+                  <div className="text-[10.5px] text-[var(--tx-muted)]">Open Pipe</div>
+                  <div className="text-sm font-bold text-sky-400">
+                    {formatMillions(qItem.openArr)}{" "}
+                    <span className="text-[10.5px] font-normal text-[var(--tx-muted)]">
+                      ({qItem.dealsCount})
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10.5px] text-[var(--tx-muted)]">Weighted</div>
+                  <div className="text-sm font-bold text-emerald-400">
+                    {formatMillions(qItem.weightedArr)}{" "}
+                    <span className="text-[10.5px] font-normal text-[var(--tx-muted)]">
+                      ({qItem.attainmentPct}%)
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10.5px] text-[var(--tx-muted)]">Stage 4+</div>
+                  <div className="text-sm font-bold text-amber-400">{qItem.stage4Count}</div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
