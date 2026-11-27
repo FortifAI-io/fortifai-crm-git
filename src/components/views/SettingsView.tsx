@@ -1,8 +1,12 @@
+import type { PipelineHealthRules } from "../../types/pipelineRules";
+import { DEFAULT_PIPELINE_RULES } from "../../types/pipelineRules";
 import { useState } from 'react';
 import { Check, CheckCircle2, Copy, Database, Download, RefreshCw, ShieldCheck, Upload } from 'lucide-react';
 import { PORTAL_SNIPPET_CODE, SUPABASE_SQL_SCHEMA } from '../../data/seedData';
 
 interface SettingsViewProps {
+  pipelineRules?: PipelineHealthRules;
+  onUpdatePipelineRules?: (next: PipelineHealthRules) => void;
   supabaseUrl: string;
   onChangeSupabaseUrl: (url: string) => void;
   supabaseAnonKey: string;
@@ -28,6 +32,8 @@ export function SettingsView({
   onTestConnection,
   onPushToSupabase,
   onPullFromSupabase,
+  pipelineRules,
+  onUpdatePipelineRules,
 }: SettingsViewProps) {
   const [copiedPortal, setCopiedPortal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -212,6 +218,159 @@ export function SettingsView({
           {SUPABASE_SQL_SCHEMA}
         </pre>
       </div>
-    </div>
+    
+      {/* Pipeline Health Formulas & Benchmarks Engine */}
+      {pipelineRules && onUpdatePipelineRules && (
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--tx-primary)]">
+                Pipeline Health Formulas &amp; Autonomous Benchmarks
+              </h2>
+              <p className="text-xs text-[var(--tx-muted)] mt-0.5">
+                Configure the thresholds, aging SLAs, stage probabilities, and health score weights that trigger Failing / At-Risk alerts.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onUpdatePipelineRules(DEFAULT_PIPELINE_RULES)}
+              className="px-2.5 py-1 text-xs font-medium rounded border border-[var(--border-subtle)] text-[var(--tx-muted)] hover:text-[var(--tx-primary)]"
+            >
+              Reset Defaults
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">2027 ARR Quota Target ($ USD)</span>
+              <input
+                type="number"
+                step={100000}
+                value={pipelineRules.arrTarget2027}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    arrTarget2027: Math.max(250000, Number(e.target.value) || 0),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Required Coverage Multiple (x)</span>
+              <input
+                type="number"
+                step={0.1}
+                value={pipelineRules.requiredCoverageMultiple}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    requiredCoverageMultiple: Math.max(1, Number(e.target.value) || 5.7),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Stale Deal SLA Limit (Days)</span>
+              <input
+                type="number"
+                step={5}
+                value={pipelineRules.staleSlaDays}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    staleSlaDays: Math.max(15, Number(e.target.value) || 90),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Max Stale Pipeline Share (%)</span>
+              <input
+                type="number"
+                step={5}
+                value={pipelineRules.maxStaleSharePct}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    maxStaleSharePct: Math.max(5, Math.min(100, Number(e.target.value) || 20)),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Healthy Coverage Floor (x)</span>
+              <input
+                type="number"
+                step={0.1}
+                value={pipelineRules.healthyCoverageFloor}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    healthyCoverageFloor: Math.max(1, Number(e.target.value) || 3.5),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Min Stage 2+ Qualified Share (%)</span>
+              <input
+                type="number"
+                step={5}
+                value={pipelineRules.minQualifiedSharePct}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    minQualifiedSharePct: Math.max(10, Math.min(100, Number(e.target.value) || 65)),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Min Weighted Attainment (%)</span>
+              <input
+                type="number"
+                step={5}
+                value={pipelineRules.minWeightedAttainmentPct}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    minWeightedAttainmentPct: Math.max(5, Math.min(100, Number(e.target.value) || 35)),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[var(--tx-muted)] font-medium">Avg Enterprise ACV ($ USD)</span>
+              <input
+                type="number"
+                step={25000}
+                value={pipelineRules.avgAcvAssumption}
+                onChange={(e) =>
+                  onUpdatePipelineRules({
+                    ...pipelineRules,
+                    avgAcvAssumption: Math.max(50000, Number(e.target.value) || 250000),
+                  })
+                }
+                className="w-full px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+</div>
   );
 }

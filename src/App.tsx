@@ -1,3 +1,4 @@
+import { loadPipelineRules, savePipelineRules, type PipelineHealthRules } from "./types/pipelineRules";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
@@ -351,9 +352,17 @@ function ScaleWorkspace({
   } | null>(null);
 
   // Editable Targets
-  const [arrTarget2027, setArrTarget2027] = useState<number>(3000000);
-  const [avgAcvAssumption, setAvgAcvAssumption] = useState<number>(250000);
-  const [coverageMultiple, setCoverageMultiple] = useState<number>(5.7);
+  const [pipelineRules, setPipelineRules] = useState<PipelineHealthRules>(() => loadPipelineRules());
+  const handleUpdatePipelineRules = useCallback((next: PipelineHealthRules) => {
+    setPipelineRules(next);
+    savePipelineRules(next);
+    setArrTarget2027(next.arrTarget2027);
+    setAvgAcvAssumption(next.avgAcvAssumption);
+    setCoverageMultiple(next.requiredCoverageMultiple);
+  }, []);
+  const [arrTarget2027, setArrTarget2027] = useState<number>(() => loadPipelineRules().arrTarget2027);
+  const [avgAcvAssumption, setAvgAcvAssumption] = useState<number>(() => loadPipelineRules().avgAcvAssumption);
+  const [coverageMultiple, setCoverageMultiple] = useState<number>(() => loadPipelineRules().requiredCoverageMultiple);
   const seedRoundTarget = 3000000;
 
   // Slide-Over Contact Detail Drawer
@@ -3318,6 +3327,9 @@ function ScaleWorkspace({
 
         {activeTab === 'pipeline_health' && perms.can_view_customers && (
           <PipelineHealthView
+              contacts={contacts}
+              rules={pipelineRules}
+              onOpenSettingsRules={() => navigateToTab("settings")}
             pipelineAnalytics={pipelineAnalytics}
             arrTarget2027={arrTarget2027}
             onChangeArrTarget={setArrTarget2027}
@@ -3530,6 +3542,8 @@ function ScaleWorkspace({
 
         {activeTab === 'settings' && (
           <SettingsView
+            pipelineRules={pipelineRules}
+            onUpdatePipelineRules={handleUpdatePipelineRules}
             supabaseUrl={supabaseUrl}
             onChangeSupabaseUrl={setSupabaseUrl}
             supabaseAnonKey={supabaseAnonKey}
