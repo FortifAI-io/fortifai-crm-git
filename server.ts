@@ -294,11 +294,6 @@ function verifyResendSvixSignature(req: Request, rawBody: string): boolean {
 
 const FALLBACK_CRM_USERS: Record<string, { id: string; email: string; full_name: string; role: string; is_active: boolean }> = {
   "varun@fortifai.io": { id: "usr_varun", email: "varun@fortifai.io", full_name: "Varun Mowar", role: "super_admin", is_active: true },
-  "mike@fortifai.io": { id: "usr_mike", email: "mike@fortifai.io", full_name: "Michael Malarkey", role: "sales_lead", is_active: true },
-  "dave@fortifai.io": { id: "usr_dave", email: "dave@fortifai.io", full_name: "Dave Brooks", role: "sales_lead", is_active: true },
-  "arun@fortifai.io": { id: "usr_arun", email: "arun@fortifai.io", full_name: "Arunava Mitra", role: "investor_relations", is_active: true },
-  "chandra@fortifai.io": { id: "usr_chandra", email: "chandra@fortifai.io", full_name: "Chandra Yeleshwarapu", role: "sales_lead", is_active: true },
-  "contact@fortifai.io": { id: "usr_marketing", email: "contact@fortifai.io", full_name: "Fortifai Marketing", role: "marketing", is_active: true },
 };
 
 async function startServer() {
@@ -480,6 +475,7 @@ async function startServer() {
         email?: string;
         full_name?: string;
         role?: string;
+        permissions?: Record<string, boolean>;
         initialPassword?: string;
       };
       const email = String(body.email || "").trim().toLowerCase();
@@ -491,24 +487,53 @@ async function startServer() {
         return res.status(400).json({ ok: false, error: "Valid @fortifai.io or @tryfortifai.us email required." });
       }
 
-      const resendKey = (process.env.RESEND_API_KEY || "").trim();
-      if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
-        return res.status(200).json({ ok: true, mode: "skipped_no_resend_key" });
+      // Ensure user exists in Supabase crm_users (and store initial password hash if provided)
+      const sbAdmin = getSupabaseAdmin();
+      if (sbAdmin) {
+        const upsertRow: Record<string, unknown> = {
+          email,
+          full_name: fullName,
+          sender_display_name: fullName,
+          role,
+          is_active: true,
+        };
+        if (body.permissions) upsertRow.permissions = body.permissions;
+        if (initialPassword.length >= 8) {
+          upsertRow.password_hash = hashPasswordScrypt(initialPassword);
+        }
+        await sbAdmin.from("crm_users").upsert(upsertRow, { onConflict: "email" });
       }
 
-      const loginUrl = "https://fortifai-crm-git.vercel.app";
-      const passwordLine = initialPassword
-        ? `Temporary Password: ${initialPassword}`
-        : "Password: Use the workspace password shared by Varun (you can update it anytime under Users & RBAC).";
+      // Generate a 7-day signed invite token so the recipient can set their own password on arrival
+      const inviteClaims: SessionClaims = {
+        email,
+        role,
+        permissions: {
+          ...SERVER_ROLE_PRESETS[role] || SERVER_ROLE_PRESETS.sales_lead,
+          ...(body.permissions || {}),
+        },
+        exp: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      };
+      const inviteToken = signSessionToken(inviteClaims);
+      const baseUrl = "https://fortifai-crm-git.vercel.app";
+      const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(email)}`;
+
+      const resendKey = (process.env.RESEND_API_KEY || "").trim();
+      if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
+        return res.status(200).json({ ok: true, mode: "skipped_no_resend_key", setupLink });
+      }
 
       const textBody = [
         `Hi ${fullName},`,
         "",
-        `You have been provisioned on Fortifai Scale (${role}) by ${caller.email}.`,
+        `You have been invited to Fortifai Scale (${role}) by ${caller.email}.`,
         "",
-        `Workspace URL: ${loginUrl}`,
+        "Click the secure link below to set your personal workspace password and sign in (link valid for 7 days):",
+        setupLink,
+        "",
+        `Workspace URL: ${baseUrl}`,
         `Login Email: ${email}`,
-        passwordLine,
+        ...(initialPassword ? [`Temporary Password (optional): ${initialPassword}`] : []),
         "",
         "Best,",
         "Fortifai Support",
@@ -524,7 +549,7 @@ async function startServer() {
           from: "Fortifai Support <support@fortifai.io>",
           reply_to: "varun@fortifai.io",
           to: [email],
-          subject: "Welcome to Fortifai Scale — Workspace Access Provisioned",
+          subject: "You're invited to Fortifai Scale — Set Your Password",
           text: textBody,
         }),
       });
@@ -537,9 +562,103 @@ async function startServer() {
         });
       }
 
-      return res.status(200).json({ ok: true, id: (resendJson as { id?: string }).id });
+      return res.status(200).json({ ok: true, id: (resendJson as { id?: string }).id, setupLink });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invite dispatch error";
+      return res.status(500).json({ ok: false, error: msg });
+    }
+  });
+
+  app.post("/api/auth/accept-invite", async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as { inviteToken?: string; newPassword?: string };
+      const inviteToken = String(body.inviteToken || "").trim();
+      const newPassword = String(body.newPassword || "");
+
+      const claims = verifySessionToken(inviteToken);
+      if (!claims || !isAllowedDomainEmail(claims.email)) {
+        return res.status(401).json({
+          ok: false,
+          error: "This invitation link is invalid or expired. Ask Varun to click Resend Invite.",
+        });
+      }
+      if (newPassword.length < 8) {
+        return res.status(400).json({
+          ok: false,
+          error: "Choose a password with at least 8 characters.",
+        });
+      }
+
+      const newHash = hashPasswordScrypt(newPassword);
+      const sbAdmin = getSupabaseAdmin();
+      let dbUser: Record<string, any> | null = null;
+      if (sbAdmin) {
+        const { data } = await sbAdmin
+          .from("crm_users")
+          .upsert(
+            {
+              email: claims.email,
+              full_name: claims.email.split("@")[0],
+              sender_display_name: claims.email.split("@")[0],
+              role: claims.role,
+              permissions: claims.permissions,
+              is_active: true,
+              password_hash: newHash,
+              last_login_at: new Date().toISOString(),
+            },
+            { onConflict: "email" }
+          )
+          .select("*")
+          .single();
+        dbUser = data || null;
+      }
+
+      const sessionClaims: SessionClaims = {
+        email: claims.email,
+        role: claims.role,
+        permissions: claims.permissions,
+        exp: Date.now() + 12 * 60 * 60 * 1000,
+      };
+      const token = signSessionToken(sessionClaims);
+
+      return res.status(200).json({
+        ok: true,
+        token,
+        user: {
+          id: dbUser?.id || `usr_${claims.email}`,
+          email: claims.email,
+          full_name: dbUser?.full_name || claims.email.split("@")[0],
+          sender_display_name: dbUser?.sender_display_name || dbUser?.full_name || claims.email.split("@")[0],
+          role: claims.role,
+          permissions: claims.permissions,
+          is_active: true,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to complete invite setup";
+      return res.status(500).json({ ok: false, error: msg });
+    }
+  });
+
+  app.post("/api/admin/delete-user", async (req: Request, res: Response) => {
+    try {
+      const authHeader = String(req.headers.authorization || "");
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const caller = verifySessionToken(bearer);
+      if (!caller || caller.role !== "super_admin") {
+        return res.status(403).json({ ok: false, error: "Only super_admin can remove users." });
+      }
+      const email = String((req.body || {}).email || "").trim().toLowerCase();
+      if (!email || email === "varun@fortifai.io") {
+        return res.status(400).json({ ok: false, error: "Primary super_admin cannot be deleted." });
+      }
+      const sbAdmin = getSupabaseAdmin();
+      if (sbAdmin) {
+        await sbAdmin.from("crm_users").delete().eq("email", email);
+      }
+      return res.status(200).json({ ok: true, email });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Delete user failed";
       return res.status(500).json({ ok: false, error: msg });
     }
   });

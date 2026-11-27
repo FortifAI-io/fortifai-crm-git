@@ -2661,6 +2661,58 @@ function ScaleWorkspace({
     })();
   };
 
+  
+  const handleResendInvite = useCallback(
+    async (user: CrmUser) => {
+      showToast(`Resending invitation email to ${user.email}...`);
+      try {
+        const token = sessionToken || (await refreshCmsSession()) || '';
+        const resp = await fetch('/api/admin/send-invite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            email: user.email,
+            full_name: user.full_name,
+            role: user.role,
+            permissions: user.permissions,
+          }),
+        });
+        const out = (await resp.json()) as { ok?: boolean; error?: string };
+        if (resp.ok && out.ok) {
+          showToast(`Invitation email resent to ${user.email} from support@fortifai.io`);
+        } else {
+          showToast(out.error || `Failed to resend invite to ${user.email}`);
+        }
+      } catch {
+        showToast(`Network error resending invite to ${user.email}`);
+      }
+    },
+    [refreshCmsSession, sessionToken, showToast]
+  );
+
+  const handleDeleteUser = useCallback(
+    async (user: CrmUser) => {
+      if (user.email.toLowerCase() === 'varun@fortifai.io') return;
+      setCrmUsers((prev) => prev.filter((u) => u.id !== user.id && u.email.toLowerCase() !== user.email.toLowerCase()));
+      showToast(`Removed ${user.email} from Fortifai Scale`);
+      try {
+        const token = sessionToken || (await refreshCmsSession()) || '';
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ email: user.email }),
+        });
+      } catch {}
+    },
+    [refreshCmsSession, sessionToken, showToast]
+  );
+
   const handleUpdateUserRole = (userId: string, role: UserRole) => {
     setCrmUsers((prev) =>
       prev.map((u) => {
@@ -3617,6 +3669,8 @@ function ScaleWorkspace({
             crmUsers={crmUsers}
             currentUser={currentUser}
             onInviteUser={handleInviteUser}
+            onResendInvite={handleResendInvite}
+            onDeleteUser={handleDeleteUser}
             onUpdateUserRole={handleUpdateUserRole}
             onTogglePermission={handleToggleUserPermission}
             onToggleUserActive={handleToggleUserActive}

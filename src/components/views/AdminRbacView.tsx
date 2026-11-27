@@ -17,6 +17,8 @@ import { ALLOWED_AUTH_DOMAINS, PERMISSION_LABELS, ROLE_PRESETS } from '../../dat
 interface AdminRbacViewProps {
   crmUsers: CrmUser[];
   currentUser: CrmUser;
+  onResendInvite?: (user: CrmUser) => void;
+  onDeleteUser?: (user: CrmUser) => void;
   onInviteUser: (payload: {
     email: string;
     full_name: string;
@@ -34,6 +36,8 @@ export function AdminRbacView({
   crmUsers,
   currentUser,
   onInviteUser,
+  onResendInvite,
+  onDeleteUser,
   onUpdateUserRole,
   onTogglePermission,
   onToggleUserActive,
