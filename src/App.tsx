@@ -2648,7 +2648,16 @@ function ScaleWorkspace({
     showToast(`Provisioned ${newUser.email} (${newUser.role}) — sending invite email...`);
     void (async () => {
       try {
-        const token = sessionToken || (await refreshCmsSession()) || "";
+        let token = sessionToken || "";
+        if (!token) {
+          const sr = await fetch("/api/auth/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: authenticatedUser.email }),
+          });
+          const sj = (await sr.json().catch(() => ({}))) as { token?: string };
+          token = sj.token || "";
+        }
         const resp = await fetch("/api/admin/send-invite", {
           method: "POST",
           headers: {
@@ -2675,25 +2684,6 @@ function ScaleWorkspace({
 
   
 
-  const handleDeleteUser = useCallback(
-    async (user: CrmUser) => {
-      if (user.email.toLowerCase() === 'varun@fortifai.io') return;
-      setCrmUsers((prev) => prev.filter((u) => u.id !== user.id && u.email.toLowerCase() !== user.email.toLowerCase()));
-      showToast(`Removed ${user.email} from Fortifai Scale`);
-      try {
-        const token = sessionToken || (await refreshCmsSession()) || '';
-        await fetch('/api/admin/delete-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ email: user.email }),
-        });
-      } catch {}
-    },
-    [refreshCmsSession, sessionToken, showToast]
-  );
 
   const handleUpdateUserRole = (userId: string, role: UserRole) => {
     setCrmUsers((prev) =>
@@ -2895,6 +2885,8 @@ function ScaleWorkspace({
   }, [authenticatedUser, currentUser.role, isSimulating, issueServerSession, perms, simulatedRole]);
 
 
+
+
   const handleResendInvite = useCallback(
     async (user: CrmUser) => {
       showToast(`Resending invitation email to ${user.email}...`);
@@ -2922,6 +2914,28 @@ function ScaleWorkspace({
       } catch {
         showToast(`Network error resending invite to ${user.email}`);
       }
+    },
+    [refreshCmsSession, sessionToken, showToast]
+  );
+
+  const handleDeleteUser = useCallback(
+    async (user: CrmUser) => {
+      if (user.email.toLowerCase() === 'varun@fortifai.io') return;
+      setCrmUsers((prev) =>
+        prev.filter((u) => u.id !== user.id && u.email.toLowerCase() !== user.email.toLowerCase())
+      );
+      showToast(`Removed ${user.email} from Fortifai Scale`);
+      try {
+        const token = sessionToken || (await refreshCmsSession()) || '';
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ email: user.email }),
+        });
+      } catch {}
     },
     [refreshCmsSession, sessionToken, showToast]
   );
