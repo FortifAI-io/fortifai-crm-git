@@ -347,3 +347,24 @@ html.dark .text-rose-700,
 html.dark .text-rose-800 {
   color: #FDA4AF !important;
 }
+
+/* Dark Mode Pipeline Health Matrix & Summary Column Fixes */
+html.dark th.bg-slate-50,
+html.dark th.bg-slate-100,
+html.dark th.bg-slate-200,
+html.dark td.bg-slate-50,
+html.dark td.bg-slate-100,
+html.dark td.bg-slate-200,
+html.dark tr.bg-slate-50 > td,
+html.dark tr.bg-slate-100 > td {
+  background-color: #162235 !important;
+  color: #F1F5F9 !important;
+  border-color: #24344D !important;
+}
+
+html.dark thead tr,
+html.dark thead th {
+  background-color: #0F172A !important;
+  color: #94A3B8 !important;
+  border-color: #1E293B !important;
+}
