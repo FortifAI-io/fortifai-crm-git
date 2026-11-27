@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles } from "lucide-react";
+import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles, ChevronDown, ChevronUp, Layers, Target, Users } from "lucide-react";
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
@@ -10,7 +10,6 @@ import {
   type NumericFilterRange,
 } from '../ColumnFilterHeader';
 import { DeliveryStatusBadge } from '../DeliveryStatusBadge';
-import { KeyMetricsStrip } from '../KeyMetricsStrip';
 import { CmsText } from '../CmsText';
 import {
   TABLE_DENSITY_CLASSES,
@@ -368,40 +367,267 @@ export function CustomersView({
         )
       : 0;
 
+  const [insightsOpen, setInsightsOpen] = useState(false);
+
+  const dbMetrics = useMemo(() => {
+    const scopeList = filteredCustomers;
+    const totalContacts = scopeList.length;
+    const uniqueOrgs = new Set(scopeList.map((c) => (c.organization || "").trim().toLowerCase()).filter(Boolean)).size;
+    const tier1Count = scopeList.filter((c) => (c.tier || "Tier I") === "Tier I").length;
+    const tier1Pct = totalContacts > 0 ? Math.round((tier1Count / totalContacts) * 100) : 0;
+    const f500Count = scopeList.filter((c) => c.fortune_500).length;
+
+    const scored = scopeList.filter((c) => (c.icp_score ?? 0) > 0);
+    const avgIcp = scored.length > 0
+      ? Math.round(scored.reduce((s, c) => s + (c.icp_score || 0), 0) / scored.length)
+      : 0;
+    const eliteIcpCount = scopeList.filter((c) => (c.icp_score ?? 0) >= 85).length;
+
+    const uncontactedCount = scopeList.filter((c) => !c.delivery_status || c.delivery_status === "not_sent").length;
+    const uncontactedPct = totalContacts > 0 ? Math.round((uncontactedCount / totalContacts) * 100) : 0;
+    const engagedCount = scopeList.filter((c) =>
+      ["opened", "portal_visited", "replied"].includes(c.delivery_status || "") || c.email_opened || c.portal_visited
+    ).length;
+
+    // Persona breakdown (CFO, CCO/GC, CPO, CAE)
+    const personas = ["CFO", "CCO/GC", "CPO", "CAE"];
+    const byPersona = personas.map((p) => {
+      const grp = scopeList.filter((c) => c.buyer_persona === p);
+      const t1 = grp.filter((c) => (c.tier || "Tier I") === "Tier I").length;
+      return { persona: p, count: grp.length, tier1: t1, pct: totalContacts > 0 ? Math.round((grp.length / totalContacts) * 100) : 0 };
+    });
+
+    // Top 6 Sectors
+    const secMap = new Map<string, { count: number; tier1: number; avgScore: number }>();
+    scopeList.forEach((c) => {
+      const sec = c.industry?.trim() || "Unspecified";
+      const cur = secMap.get(sec) || { count: 0, tier1: 0, avgScore: 0 };
+      cur.count += 1;
+      if ((c.tier || "Tier I") === "Tier I") cur.tier1 += 1;
+      cur.avgScore += c.icp_score || 0;
+      secMap.set(sec, cur);
+    });
+    const topSectors = Array.from(secMap.entries())
+      .map(([sector, st]) => ({
+        sector,
+        count: st.count,
+        tier1: st.tier1,
+        avgScore: st.count > 0 ? Math.round(st.avgScore / st.count) : 0,
+        pct: totalContacts > 0 ? Math.round((st.count / totalContacts) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+
+    // Multi-threading depth (accounts with >=2 contacts vs single-threaded)
+    const orgCounts = new Map<string, number>();
+    scopeList.forEach((c) => {
+      const k = (c.organization || "").trim().toLowerCase();
+      if (k) orgCounts.set(k, (orgCounts.get(k) || 0) + 1);
+    });
+    const multiThreadedOrgs = Array.from(orgCounts.values()).filter((n) => n >= 2).length;
+
+    return {
+      totalContacts,
+      uniqueOrgs,
+      tier1Count,
+      tier1Pct,
+      f500Count,
+      avgIcp,
+      eliteIcpCount,
+      uncontactedCount,
+      uncontactedPct,
+      engagedCount,
+      byPersona,
+      topSectors,
+      multiThreadedOrgs,
+    };
+  }, [filteredCustomers]);
+
   return (
     <div className="p-6 space-y-5 max-w-[1600px] w-full mx-auto">
       {/* Persistent Key Metrics Summary Strip */}
-      <KeyMetricsStrip
-        title="Key Metrics"
-        cmsSection="Accounts & Targets"
-        cmsKeyPrefix="customers.kpi"
-        scopeSummary={`Live filtered view · ${filteredAndSortedCustomers.length} of ${customers.length} accounts`}
-        metrics={[
-          {
-            label: 'Total ARR',
-            value: formatCurrency(totalArr),
-            detail: `Weighted ${formatCurrency(weightedArr)}`,
-          },
-          {
-            label: 'Active Count',
-            value: String(activeCount),
-            detail: `${filteredAndSortedCustomers.length} filtered · ${customers.length} total accounts`,
-          },
-          {
-            label: 'Win Rate',
-            value: `${winRateDisplayPct}%`,
-            detail:
-              closedWinRatePct !== null
-                ? `${closedWonCount} won of ${decidedCount} closed · ${weightedWinProbPct}% weighted`
-                : `Weighted win probability · ${closedWonCount} closed won`,
-          },
-          {
-            label: 'Avg Deal Size',
-            value: formatCurrency(avgAcv),
-            detail: `Avg ICP score ${avgIcpScore}/100`,
-          },
-        ]}
-      />
+      {/* Enterprise Account Database KPI Strip (Zero Pipeline Overlap) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+              Target Accounts &amp; Contacts
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-[#E2E8F0]">
+              {dbMetrics.multiThreadedOrgs} multi-threaded
+            </span>
+          </div>
+          <div className="text-2xl font-mono font-semibold text-slate-900 mt-1 tabular-nums">
+            {dbMetrics.uniqueOrgs.toLocaleString()} <span className="text-xs font-sans font-normal text-slate-500">orgs</span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+            {dbMetrics.totalContacts.toLocaleString()} buying committee contacts ({dbMetrics.uniqueOrgs > 0 ? (dbMetrics.totalContacts / dbMetrics.uniqueOrgs).toFixed(1) : "0"} / org)
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+              Tier I &amp; Fortune 500 Mix
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {dbMetrics.tier1Pct}% Tier I
+            </span>
+          </div>
+          <div className="text-2xl font-mono font-semibold text-slate-900 mt-1 tabular-nums">
+            {dbMetrics.tier1Count.toLocaleString()}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+            {dbMetrics.f500Count.toLocaleString()} Fortune 500 enterprise contacts
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+              ICP Fit &amp; High-Priority Cohort
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {dbMetrics.eliteIcpCount} score ≥85
+            </span>
+          </div>
+          <div className="text-2xl font-mono font-semibold text-slate-900 mt-1 tabular-nums">
+            {dbMetrics.avgIcp}<span className="text-sm text-slate-400">/100</span>
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+            Mean ICP fit across filtered account database
+          </div>
+        </div>
+
+        <div className="bg-white border border-[#E2E8F0] rounded-[6px] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+              Outbound Whitespace
+            </span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+              {dbMetrics.uncontactedPct}% untouched
+            </span>
+          </div>
+          <div className="text-2xl font-mono font-semibold text-slate-900 mt-1 tabular-nums">
+            {dbMetrics.uncontactedCount.toLocaleString()}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+            Uncontacted targets · {dbMetrics.engagedCount} engaged signals
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible Database Insights Section (Collapsed by Default so Account List stays Hero) */}
+      <div className="bg-white border border-[#E2E8F0] rounded-[6px] overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setInsightsOpen((prev) => !prev)}
+          aria-expanded={insightsOpen}
+          className="w-full px-4 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition-colors"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Layers size={14} className="text-[#2E5A8A] shrink-0" />
+            <span className="text-[12.5px] font-semibold text-slate-900">
+              Database Insights &amp; Buying Committee Analytics
+            </span>
+            <span className="hidden sm:inline text-[11px] font-mono text-slate-500 truncate">
+              · {dbMetrics.byPersona.map((p) => `${p.persona} (${p.count})`).join(" · ")}
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-600 shrink-0">
+            {insightsOpen ? "Collapse" : "Expand"}
+            {insightsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+        </button>
+
+        {insightsOpen && (
+          <div className="p-4 border-t border-[#E2E8F0] bg-slate-50/50 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Column 1: Buying Committee Persona Distribution */}
+            <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+                  Buying Committee Personas
+                </span>
+                <Users size={13} className="text-slate-400" />
+              </div>
+              <div className="space-y-2">
+                {dbMetrics.byPersona.map((row) => (
+                  <div key={row.persona} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-slate-800">{row.persona}</span>
+                      <span className="font-mono text-[11px] text-slate-600 tabular-nums">
+                        {row.count} ({row.pct}%) · {row.tier1} Tier I
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#2E5A8A] rounded-full"
+                        style={{ width: `${Math.max(4, row.pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Column 2: Top Industry Sectors */}
+            <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500">
+                  Top Industry Sectors
+                </span>
+                <Target size={13} className="text-slate-400" />
+              </div>
+              <div className="space-y-2">
+                {dbMetrics.topSectors.map((sec) => (
+                  <div key={sec.sector} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="font-medium text-slate-800 truncate">{sec.sector}</span>
+                      <span className="font-mono text-[11px] text-slate-600 shrink-0 tabular-nums">
+                        {sec.count} ({sec.pct}%) · ICP {sec.avgScore}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-600 rounded-full"
+                        style={{ width: `${Math.max(4, sec.pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Column 3: Enterprise GTM Wedge & Threading Readiness */}
+            <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-3.5 flex flex-col justify-between space-y-3">
+              <div>
+                <div className="text-[10.5px] font-mono uppercase tracking-wider text-slate-500 mb-2">
+                  Enterprise Account Coverage
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2.5 rounded-[5px] bg-slate-50 border border-[#E2E8F0]">
+                    <div className="text-[10px] font-mono text-slate-500">MULTI-THREADED ORGS</div>
+                    <div className="text-base font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">
+                      {dbMetrics.multiThreadedOrgs}
+                    </div>
+                    <div className="text-[10px] text-slate-500">≥2 executives mapped</div>
+                  </div>
+                  <div className="p-2.5 rounded-[5px] bg-slate-50 border border-[#E2E8F0]">
+                    <div className="text-[10px] font-mono text-slate-500">SINGLE-THREADED</div>
+                    <div className="text-base font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">
+                      {Math.max(0, dbMetrics.uniqueOrgs - dbMetrics.multiThreadedOrgs)}
+                    </div>
+                    <div className="text-[10px] text-slate-500">Expand buying committee</div>
+                  </div>
+                </div>
+              </div>
+              <div className="p-2.5 rounded-[5px] bg-indigo-50/70 border border-indigo-200/80 text-[11px] text-slate-700 leading-snug">
+                <strong className="text-slate-900">Land-and-Expand Play:</strong> Lead with CFO/CAE on 100% ERP leakage recovery, then expand to CCO/GC &amp; CPO on the same zero-egress connector.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Compact Utility Bar (No filter stripe, no manage/add columns) */}
       <div className="bg-white border border-[#E2E8F0] rounded-lg px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -431,14 +657,7 @@ export function CustomersView({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onNavigateToAnalytics}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors whitespace-nowrap"
-          >
-            <BarChart3 size={13} />
-            Customer Analytics
-          </button>
+          
 
           <span className="text-slate-400 tabular-nums whitespace-nowrap">
             Showing <strong className="text-slate-700">{filteredAndSortedCustomers.length}</strong>{' '}
