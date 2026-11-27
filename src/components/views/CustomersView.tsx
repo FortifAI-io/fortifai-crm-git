@@ -943,6 +943,9 @@ export function CustomersView({
                     { label: "< 50%", max: 49 },
                   ]}
                 />
+                <th className={`${densityCls.headerCell} whitespace-nowrap`}>
+                  Weighted ARR
+                </th>
                 <ColumnFilterHeader
                   columnKey="expected_close"
                   label="Close Qtr"
@@ -1201,6 +1204,10 @@ export function CustomersView({
                           />
                           <span className="text-slate-400">%</span>
                         </div>
+                      </td>
+                      {/* Weighted ARR (Target ARR * Probability) */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap font-mono text-xs font-medium text-sky-400`}>
+                        {formatCurrency(Math.round(((c.amount_usd || 0) * (c.probability || 0)) / 100))}
                       </td>
 
                       {/* Close Qtr */}

@@ -117,14 +117,14 @@ export function PipelineHealthView({
 
     const repWeightedArr =
       activeDeals.reduce((s, d) => {
-        const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+        const prob = d.probability ?? rules.stageWinProbs[d.stage] ?? 0;
         return s + ((d.amount_usd || 0) * prob) / 100;
       }, 0) +
       simulatedAddedArr * 0.25;
 
     const aiRiskAdjustedArr =
       activeDeals.reduce((s, d) => {
-        const baseProb = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+        const baseProb = d.probability ?? rules.stageWinProbs[d.stage] ?? 0;
         const age = d.aging_days || 0;
         let discountFactor = 1.0;
         if (!simRescueStale) {
@@ -181,7 +181,7 @@ export function PipelineHealthView({
         horizonDeals.reduce((s, d) => s + (d.amount_usd || 0), 0) + extraSimArr;
       const aiWtdArr =
         horizonDeals.reduce((s, d) => {
-          const baseProb = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+          const baseProb = d.probability ?? rules.stageWinProbs[d.stage] ?? 0;
           const age = d.aging_days || 0;
           const factor =
             !simRescueStale && age > rules.staleSlaDays
@@ -194,7 +194,7 @@ export function PipelineHealthView({
         extraSimArr * 0.25;
 
       const reqPipe = Math.round(targetArr * coverageMultiple);
-      const covMult = targetArr > 0 ? Number((pipeArr / targetArr).toFixed(2)) : 0;
+      const covMult = targetArr > 0 ? Number((aiWtdArr / targetArr).toFixed(2)) : 0;
       const gapArr = Math.max(0, reqPipe - pipeArr);
       const dealsNeeded = avgAcvAssumption > 0 ? Math.ceil(gapArr / avgAcvAssumption) : 0;
       const hStaleDeals = horizonDeals.filter((d) => (d.aging_days || 0) > rules.staleSlaDays);
@@ -298,36 +298,6 @@ export function PipelineHealthView({
         gapLabel: `-${formatMillions(Math.max(0, arrTarget2027 - aiRiskAdjustedArr))} weighted gap`,
         rootCause: "Heavy Stage 2 mix (20%)",
         recommendedAction: "Advance Stage 2 accounts (Dynatrace, Nokia, Sony) to Decisionmaker buy-in.",
-      });
-    }
-
-    const q1H = horizons[1];
-    if (q1H.covMult < coverageMultiple) {
-      failingMetrics.push({
-        id: "fail_q1_horizon",
-        severity: q1H.covMult < rules.healthyCoverageFloor ? "critical" : "warning",
-        horizon: "Q1 2027",
-        metricName: "Q1 2027 Coverage & Close Readiness",
-        actualLabel: `${q1H.covMult}x (${formatMillions(q1H.pipeArr)})`,
-        benchmarkLabel: `${coverageMultiple}x (${formatMillions(q1H.reqPipe)})`,
-        gapLabel: `-${formatMillions(q1H.gapArr)} (${q1H.dealsNeeded} deals needed)`,
-        rootCause: `${q1H.activeCount} Q1 deals`,
-        recommendedAction: "Assign expected Close Qtr on near-term deals in Accounts & Targets.",
-      });
-    }
-
-    const q2H = horizons[2];
-    if (q2H.covMult < coverageMultiple) {
-      failingMetrics.push({
-        id: "fail_q2_horizon",
-        severity: q2H.covMult < rules.healthyCoverageFloor ? "critical" : "warning",
-        horizon: "Q2 2027",
-        metricName: "Q2 2027 Coverage & Build Velocity",
-        actualLabel: `${q2H.covMult}x (${formatMillions(q2H.pipeArr)})`,
-        benchmarkLabel: `${coverageMultiple}x (${formatMillions(q2H.reqPipe)})`,
-        gapLabel: `-${formatMillions(q2H.gapArr)} (${q2H.dealsNeeded} deals needed)`,
-        rootCause: `${q2H.activeCount} Q2 deals`,
-        recommendedAction: "Assign Q2 2027 Close Qtr to active Stage 2–4 opportunities.",
       });
     }
 
@@ -619,9 +589,9 @@ export function PipelineHealthView({
 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-[var(--tx-muted)]">Coverage vs {coverageMultiple}x Target</span>
+                    <span className="text-[var(--tx-muted)]">Weighted Attainment vs Quota</span>
                     <span className="font-semibold tabular-nums text-[var(--tx-primary)]">
-                      {h.covMult}x ({formatMillions(h.pipeArr)} / {formatMillions(h.reqPipe)})
+                      {h.covMult}x wtd ({formatMillions(h.aiWtdArr)} / {formatMillions(h.targetArr)} target)
                     </span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-slate-800/80 overflow-hidden">
@@ -700,7 +670,7 @@ export function PipelineHealthView({
               .sort((a, b) => (b.amount_usd || 0) - (a.amount_usd || 0));
             const qTotalArr = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
             const qWeightedArr = qDeals.reduce((s, d) => {
-              const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+              const prob = d.probability ?? rules.stageWinProbs[d.stage] ?? 0;
               return s + ((d.amount_usd || 0) * prob) / 100;
             }, 0);
             const isOver = dragOverQuarter === q;
@@ -730,7 +700,7 @@ export function PipelineHealthView({
               >
                 <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[var(--border-subtle)] whitespace-nowrap">
                   <span className="text-[12px] font-semibold text-[var(--tx-primary)]">
-                    {q} <span className="font-mono font-normal text-[11px] text-[var(--tx-muted)]">· {formatMillions(qTotalArr)}</span>
+                    {q} <span className="font-mono font-normal text-[11px] text-[var(--tx-muted)]">· {formatMillions(qWeightedArr)} wtd</span>
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-muted)]">
                     {qDeals.length}
@@ -744,7 +714,7 @@ export function PipelineHealthView({
                 ) : (
                   <div className="space-y-1.5">
                     {qDeals.map((deal) => {
-                      const prob = rules.stageWinProbs[deal.stage] ?? deal.probability ?? 0;
+                      const prob = deal.probability ?? rules.stageWinProbs[deal.stage] ?? 0;
                       const isStale = (deal.aging_days || 0) > rules.staleSlaDays;
                       return (
                         <div
@@ -940,7 +910,7 @@ export function PipelineHealthView({
                   const qDeals = engine.scheduledDeals.filter((d) => d.expected_close === q);
                   const qAct = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
                   const qWtd = qDeals.reduce((s, d) => {
-                    const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+                    const prob = d.probability ?? rules.stageWinProbs[d.stage] ?? 0;
                     return s + ((d.amount_usd || 0) * prob) / 100;
                   }, 0);
                   return {
