@@ -4,7 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -32,7 +32,7 @@ import type {
   PortalLinkMode,
   TelemetryEvent,
 } from '../../types/crm';
-import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
+import { getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
 
 interface ComposerViewProps {
   currentUser: CrmUser;
@@ -71,7 +71,6 @@ interface ComposerViewProps {
 interface PlaybookPreset {
   id: string;
   label: string;
-  personaBadge: string;
   portalMode: PortalLinkMode;
   subject: string;
   body: string;
@@ -81,12 +80,9 @@ const CUSTOMER_PLAYBOOKS: PlaybookPreset[] = [
   {
     id: 'cco_doj',
     label: 'CCO / GC · DOJ ECCP & 3rd-Party Risk',
-    personaBadge: 'CCO/GC',
     portalMode: 'none',
-    subject: 'Continuous compliance & third-party oversight at {{organization}}',
+    subject: 'Continuous compliance & third-party oversight',
     body: `Hi {{first_name}},
-
-{{custom_hook}}
 
 Most compliance teams still rely on periodic sample testing across siloed ERPs—leaving blind spots around FCPA, third-party onboarding, and post-clearance trade exposure.
 
@@ -101,12 +97,9 @@ Founder & CEO, Fortifai`,
   {
     id: 'cae_audit',
     label: 'Chief Audit Exec · 100% ERP Population',
-    personaBadge: 'CAE',
     portalMode: 'none',
-    subject: '100% transaction surveillance for {{organization}} Internal Audit',
+    subject: '100% transaction surveillance for Internal Audit',
     body: `Hi {{first_name}},
-
-{{custom_hook}}
 
 Traditional internal audit teams inspect under 5% of ERP transactions via quarterly samples—missing control overrides and duplicate leakage until months after close.
 
@@ -121,12 +114,9 @@ Founder & CEO, Fortifai`,
   {
     id: 'cfo_margin',
     label: 'CFO / CAO · 2–5% Margin & P2P Recovery',
-    personaBadge: 'CFO',
     portalMode: 'none',
-    subject: 'Preventing P2P & margin leakage at {{organization}}',
+    subject: 'Preventing P2P & margin leakage',
     body: `Hi {{first_name}},
-
-{{custom_hook}}
 
 Across $1B+ enterprises, 2% to 5% of spend quietly leaks through off-contract pricing, duplicate disbursements, and unapplied vendor credits that clean sample audits miss.
 
@@ -141,12 +131,9 @@ Founder & CEO, Fortifai`,
   {
     id: 'cpo_supply',
     label: 'CPO · Pass-Through Vendor & Price Guard',
-    personaBadge: 'CPO',
     portalMode: 'none',
-    subject: 'Vendor price variance & middleman visibility — {{organization}}',
+    subject: 'Vendor price variance & middleman visibility',
     body: `Hi {{first_name}},
-
-{{custom_hook}}
 
 Fortifai connects read-only to your ERP and procurement tables inside your VPC to benchmark every PO against contract terms, commodity indices, and external counterparty substance—exposing pass-through markups before cash leaves.
 
@@ -159,14 +146,11 @@ Founder & CEO, Fortifai`,
   {
     id: 'warm_control_tower',
     label: 'Warm Follow-Up · Multi-Agent Control Tower',
-    personaBadge: 'All Engaged',
     portalMode: 'overview',
-    subject: 'Fortifai Multi-Agent Control Tower — architecture update for {{organization}}',
+    subject: 'Fortifai Multi-Agent Control Tower — architecture update',
     body: `Hi {{first_name}},
 
-{{custom_hook}}
-
-Following up on our earlier conversation—wanted to share how we have unified our Audit, Compliance, Finance, and Procurement agents into a single in-VPC Control Tower running 100% inside {{organization}}'s security boundary with zero data egress.
+Following up on our earlier conversation—wanted to share how we have unified our Audit, Compliance, Finance, and Procurement agents into a single in-VPC Control Tower running 100% inside your security boundary with zero data egress.
 
 You can explore the interactive agent suite and ROI simulator here: {{portal_link}}
 
@@ -182,12 +166,9 @@ const INVESTOR_PLAYBOOKS: PlaybookPreset[] = [
   {
     id: 'inv_wave1',
     label: 'US Institutional Seed · Wave 1 Intro ($3M / $15M Cap)',
-    personaBadge: 'Wave 1 Lead',
     portalMode: 'investor',
     subject: 'Fortifai — Autonomous Audit & Compliance for Fortune 500 ($3M Seed)',
     body: `Hi {{first_name}},
-
-{{custom_hook}}
 
 We are raising a $3M Seed ($15M cap post-money SAFE) with enterprise deployments across Honeywell, Nokia, and Brookfield Properties—monitoring 100% of ERP transactions inside the customer's VPC with zero data egress.
 
@@ -202,9 +183,8 @@ Co-Founder & CEO, Fortifai`,
   {
     id: 'inv_nudge',
     label: 'In-Thread Reminder · Traction & Portal Update',
-    personaBadge: 'Follow-Up',
     portalMode: 'investor',
-    subject: 'Re: Fortifai ($3M Seed) — {{organization}}',
+    subject: 'Re: Fortifai ($3M Seed)',
     body: `Hi {{first_name}},
 
 Wanted to share a quick update as we finalize our $3M Seed ($15M cap post-money SAFE)—we just expanded our Fortune 500 enterprise pipeline across US Aero & Defense, Pharma, and Industrial accounts with former DOJ Fraud Section Trial Attorney David Maria leading the Americas.
@@ -224,6 +204,130 @@ const MARKETING_SENDER_IDENTITY = 'Fortifai <contact@fortifai.io>';
 function formatUserSender(user: CrmUser): string {
   const displayName = user.sender_display_name?.trim() || user.full_name;
   return `${displayName} <${user.email}>`;
+}
+
+interface MultiSelectDropdownProps {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  searchable?: boolean;
+}
+
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onChange,
+  searchable = false,
+}: MultiSelectDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [filterText, setFilterText] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [open]);
+
+  const visibleOptions = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.toLowerCase().includes(q));
+  }, [options, filterText]);
+
+  const toggleItem = (item: string) => {
+    if (selected.includes(item)) {
+      onChange(selected.filter((s) => s !== item));
+    } else {
+      onChange([...selected, item]);
+    }
+  };
+
+  const summaryText =
+    selected.length === 0
+      ? `${label}: All`
+      : selected.length === 1
+      ? `${label}: ${selected[0]}`
+      : `${label} (${selected.length})`;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`w-full px-2.5 py-1.5 rounded-[4px] border text-xs flex items-center justify-between gap-1.5 transition-colors ${
+          selected.length > 0
+            ? 'bg-indigo-50/70 border-indigo-300 text-indigo-900 font-medium'
+            : 'bg-white border-[#E2E8F0] text-slate-700 hover:bg-slate-50'
+        }`}
+      >
+        <span className="truncate">{summaryText}</span>
+        <ChevronDown size={13} className="shrink-0 text-slate-400" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 mt-1 w-64 max-w-[85vw] bg-white border border-[#E2E8F0] rounded-[6px] shadow-lg z-30 p-2 space-y-1.5">
+          {searchable && (
+            <input
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder={`Search ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-xs bg-slate-50 border border-[#E2E8F0] rounded-[4px] focus:outline-none focus:bg-white"
+            />
+          )}
+
+          <div className="flex items-center justify-between text-[11px] px-1 py-0.5 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => onChange([...options])}
+              className="text-indigo-600 hover:underline font-medium"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-slate-500 hover:text-slate-800 hover:underline"
+            >
+              Clear ({selected.length})
+            </button>
+          </div>
+
+          <div className="max-h-52 overflow-y-auto divide-y divide-slate-50">
+            {visibleOptions.length === 0 ? (
+              <div className="py-3 text-center text-[11px] text-slate-400">No matches</div>
+            ) : (
+              visibleOptions.map((opt) => {
+                const checked = selected.includes(opt);
+                return (
+                  <label
+                    key={opt}
+                    className="flex items-center gap-2 px-1.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 rounded cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleItem(opt)}
+                      className="rounded border-slate-300 text-[#0D1520]"
+                    />
+                    <span className="truncate">{opt}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ComposerView({
@@ -247,7 +351,6 @@ export function ComposerView({
   onChangeSubject,
   body,
   onChangeBody,
-  customFields,
   previewIdx,
   onChangePreviewIdx,
   sendingBatch,
@@ -270,16 +373,15 @@ export function ComposerView({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [viewMode, setViewMode] = useState<'wizard' | 'logs'>('wizard');
 
-  // Step 1: Audience & Filters
+  // Step 1: Audience & Multi-Select Filters
   const [outreachMode, setOutreachMode] = useState<'dm' | 'segment'>('dm');
   const [searchQuery, setSearchQuery] = useState('');
-  const [regionFilter, setRegionFilter] = useState<string>('All');
-  const [sectorFilter, setSectorFilter] = useState<string>('All');
-  const [personaFilter, setPersonaFilter] = useState<string>('All');
-  const [tierFilter, setTierFilter] = useState<string>('All');
-  const [stageFilter, setStageFilter] = useState<string>('All');
-  const [ownerFilter, setOwnerFilter] = useState<string>('All');
-  const [f500Only, setF500Only] = useState(false);
+  const [activeQuickCohort, setActiveQuickCohort] = useState<string | null>(null);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [selectedSectors, setSelectedSectors] = useState<string[]>([]);
+  const [selectedPersonas, setSelectedPersonas] = useState<string[]>([]);
+  const [selectedTiers, setSelectedTiers] = useState<string[]>([]);
+  const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [cooldownDays, setCooldownDays] = useState<number>(0);
 
   // Step 2 & 3: AI Hooks + Per-Recipient VIP Overrides
@@ -292,13 +394,12 @@ export function ComposerView({
 
   useEffect(() => {
     setSearchQuery('');
-    setRegionFilter('All');
-    setSectorFilter('All');
-    setPersonaFilter('All');
-    setTierFilter('All');
-    setStageFilter('All');
-    setOwnerFilter('All');
-    setF500Only(false);
+    setActiveQuickCohort(null);
+    setSelectedRegions([]);
+    setSelectedSectors([]);
+    setSelectedPersonas([]);
+    setSelectedTiers([]);
+    setSelectedStages([]);
     setCooldownDays(0);
     setEditingVipId(null);
     setViewMode('wizard');
@@ -319,23 +420,22 @@ export function ComposerView({
     const sectors = new Set<string>();
     const personas = new Set<string>();
     const stages = new Set<string>();
-    const owners = new Set<string>();
 
     domainRecipients.forEach((c) => {
       if (c.region) regions.add(c.region);
-      if (c.industry) sectors.add(c.industry);
+      if (c.industry && !c.industry.startsWith('%') && c.industry !== '0') {
+        sectors.add(c.industry);
+      }
       if (domainScope === 'customer' && c.buyer_persona) personas.add(c.buyer_persona);
       if (domainScope === 'investor' && c.priority_tier) personas.add(c.priority_tier);
       if (c.stage) stages.add(c.stage);
-      if (c.owner) owners.add(c.owner);
     });
 
     return {
-      regions: ['All', ...Array.from(regions).sort()],
-      sectors: ['All', ...Array.from(sectors).sort()],
-      personas: ['All', ...Array.from(personas).sort()],
-      stages: ['All', ...Array.from(stages).sort()],
-      owners: ['All', ...Array.from(owners).sort()],
+      regions: Array.from(regions).sort(),
+      sectors: Array.from(sectors).sort(),
+      personas: Array.from(personas).sort(),
+      stages: Array.from(stages).sort(),
     };
   }, [domainRecipients, domainScope]);
 
@@ -361,18 +461,16 @@ export function ComposerView({
       }
       if (outreachMode === 'dm') return true;
 
-      if (regionFilter !== 'All' && c.region !== regionFilter) return false;
-      if (sectorFilter !== 'All' && (c.industry || '') !== sectorFilter) return false;
-      if (personaFilter !== 'All') {
-        const key = domainScope === 'customer' ? c.buyer_persona : c.priority_tier;
-        if (key !== personaFilter) return false;
+      if (selectedRegions.length > 0 && !selectedRegions.includes(c.region)) return false;
+      if (selectedSectors.length > 0 && !selectedSectors.includes(c.industry || '')) return false;
+      if (selectedPersonas.length > 0) {
+        const key = domainScope === 'customer' ? c.buyer_persona || '' : c.priority_tier || '';
+        if (!selectedPersonas.includes(key)) return false;
       }
-      if (domainScope === 'customer') {
-        if (tierFilter !== 'All' && (c.tier || 'Tier I') !== tierFilter) return false;
-        if (f500Only && !c.fortune_500) return false;
+      if (domainScope === 'customer' && selectedTiers.length > 0) {
+        if (!selectedTiers.includes(c.tier || 'Tier I')) return false;
       }
-      if (stageFilter !== 'All' && c.stage !== stageFilter) return false;
-      if (ownerFilter !== 'All' && (c.owner || '') !== ownerFilter) return false;
+      if (selectedStages.length > 0 && !selectedStages.includes(c.stage)) return false;
       return true;
     });
   }, [
@@ -380,13 +478,11 @@ export function ComposerView({
     domainScope,
     outreachMode,
     searchQuery,
-    regionFilter,
-    sectorFilter,
-    personaFilter,
-    tierFilter,
-    stageFilter,
-    ownerFilter,
-    f500Only,
+    selectedRegions,
+    selectedSectors,
+    selectedPersonas,
+    selectedTiers,
+    selectedStages,
     cooldownDays,
   ]);
 
@@ -451,27 +547,28 @@ export function ComposerView({
       step > 1;
     if (
       hasProgress &&
-      !window.confirm("Cancel the current outreach sequence? This will clear selected recipients, AI hooks, and reset the draft.")
+      !window.confirm(
+        'Cancel the current outreach sequence? This will clear selected recipients, AI hooks, and reset the draft.'
+      )
     ) {
       return;
     }
     onChangeSelectedIds([]);
     onChangePreviewIdx(0);
-    setActivePlaybookId("");
+    setActiveQuickCohort(null);
+    setActivePlaybookId('');
     setAiHooksById({});
     setAiStatusBanner(null);
     setVipBodyOverrides({});
     setEditingVipId(null);
-    setSearchQuery("");
-    setRegionFilter("All");
-    setSectorFilter("All");
-    setPersonaFilter("All");
-    setTierFilter("All");
-    setStageFilter("All");
-    setOwnerFilter("All");
-    setF500Only(false);
+    setSearchQuery('');
+    setSelectedRegions([]);
+    setSelectedSectors([]);
+    setSelectedPersonas([]);
+    setSelectedTiers([]);
+    setSelectedStages([]);
     setCooldownDays(0);
-    setViewMode("wizard");
+    setViewMode('wizard');
     setStep(1);
     if (onCancelSequence) onCancelSequence();
   };
@@ -480,14 +577,13 @@ export function ComposerView({
     type: 'hot_signals' | 'active_pipeline' | 'tier1_legal_audit' | 'tier1_finance_proc' | 'uncontacted'
   ) => {
     setOutreachMode('segment');
+    setActiveQuickCohort(type);
     setSearchQuery('');
-    setRegionFilter('All');
-    setSectorFilter('All');
-    setPersonaFilter('All');
-    setTierFilter('All');
-    setStageFilter('All');
-    setOwnerFilter('All');
-    setF500Only(false);
+    setSelectedRegions([]);
+    setSelectedSectors([]);
+    setSelectedPersonas([]);
+    setSelectedTiers([]);
+    setSelectedStages([]);
 
     let matched: Contact[] = [];
     if (type === 'hot_signals') {
@@ -495,12 +591,14 @@ export function ComposerView({
     } else if (type === 'active_pipeline') {
       matched = domainRecipients.filter((c) => !c.omit_from_pipeline && c.stage !== '1 Lead');
     } else if (type === 'tier1_legal_audit') {
-      setTierFilter('Tier I');
+      setSelectedTiers(['Tier I']);
+      setSelectedPersonas(['CCO/GC', 'CAE']);
       matched = domainRecipients.filter(
         (c) => (c.tier || 'Tier I') === 'Tier I' && ['CCO/GC', 'CAE'].includes(c.buyer_persona || '')
       );
     } else if (type === 'tier1_finance_proc') {
-      setTierFilter('Tier I');
+      setSelectedTiers(['Tier I']);
+      setSelectedPersonas(['CFO', 'CPO']);
       matched = domainRecipients.filter(
         (c) => (c.tier || 'Tier I') === 'Tier I' && ['CFO', 'CPO'].includes(c.buyer_persona || '')
       );
@@ -572,12 +670,9 @@ export function ComposerView({
         return;
       }
       setAiHooksById((prev) => ({ ...prev, ...data.hooks }));
-      if (!body.includes('{{custom_hook}}')) {
-        onChangeBody(`Hi {{first_name}},\n\n{{custom_hook}}\n\n${body.replace(/^Hi \{\{first_name\}\},?\s*/i, '')}`);
-      }
       const generatedCount = Object.keys(data.hooks).length;
       setAiStatusBanner(
-        `Generated ${generatedCount} persona-tailored hooks (${data.dossiersUsed || 0} grounded in Account Intelligence Dossiers).`
+        `Generated ${generatedCount} account-tailored opening lines (${data.dossiersUsed || 0} grounded in Account Intelligence Dossiers) — visible in Step 3 preview.`
       );
     } catch {
       setAiStatusBanner('Network error calling /api/personalize-outreach.');
@@ -617,11 +712,13 @@ export function ComposerView({
     if (vipBodyOverrides[sample.id] !== undefined) {
       return vipBodyOverrides[sample.id];
     }
-    const enrichedContact: Contact = aiHooksById[sample.id]
-      ? { ...sample, custom_hook: aiHooksById[sample.id] }
-      : sample;
-
-    const text = renderTemplate(body, enrichedContact);
+    let text = renderTemplate(body, sample);
+    if (aiHooksById[sample.id]) {
+      text = text.replace(
+        /^(Hi [^\n]+,\n\n)/i,
+        `$1${aiHooksById[sample.id]}\n\n`
+      );
+    }
     if (effectivePortalMode === 'none') {
       return text.replace(/\n?\s*\{\{portal_link\}\}\s*/g, '').trimEnd();
     }
@@ -670,16 +767,12 @@ export function ComposerView({
   const blockedSelectedCount = activeRecipients.length - verifiedSelectedCount;
 
   const ownerPreviewEmail = currentUser.email.trim().toLowerCase();
-
   const playbooks = domainScope === 'investor' ? INVESTOR_PLAYBOOKS : CUSTOMER_PLAYBOOKS;
-  const scopedCustomFields = customFields.filter(
-    (cf) => cf.entity_scope === domainScope || cf.entity_scope === 'both'
-  );
 
   return (
     <div className="p-6 max-w-[1160px] w-full mx-auto space-y-5">
       {/* ===================================================================== */}
-      {/* TOP BAR: 3-STEP WIZARD STEPPER + SENT LOGS SWITCHER                   */}
+      {/* TOP BAR: 3-STEP WIZARD STEPPER + CANCEL SEQUENCE + SENT LOGS          */}
       {/* ===================================================================== */}
       <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -745,19 +838,18 @@ export function ComposerView({
             Cancel Sequence
           </button>
 
-          {/* Sent Logs Toggle Button */}
-        <button
-          type="button"
-          onClick={() => setViewMode((prev) => (prev === 'logs' ? 'wizard' : 'logs'))}
-          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-[5px] border text-xs font-medium transition-colors ${
-            viewMode === 'logs'
-              ? 'bg-[#0D1520] text-white border-[#0D1520]'
-              : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-50'
-          }`}
-        >
-          <History size={14} />
-          Sent Logs ({sentLogs.length})
-        </button>
+          <button
+            type="button"
+            onClick={() => setViewMode((prev) => (prev === 'logs' ? 'wizard' : 'logs'))}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-[5px] border text-xs font-medium transition-colors ${
+              viewMode === 'logs'
+                ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-50'
+            }`}
+          >
+            <History size={14} />
+            Sent Logs ({sentLogs.length})
+          </button>
         </div>
       </div>
 
@@ -856,7 +948,7 @@ export function ComposerView({
                 Step 1: Choose Your Target Audience
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pick a single executive for a 1-to-1 message, or build a filtered cohort.
+                Pick a single executive for a 1-to-1 message, or check multiple options across Segment Cohort filters.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -926,7 +1018,7 @@ export function ComposerView({
             </div>
           </div>
 
-          {/* Segment Cohort Filters (only visible when Segment Cohort is selected) */}
+          {/* Segment Cohort Multi-Select Checkbox Filters */}
           {outreachMode === 'segment' && (
             <div className="p-4 rounded-[5px] bg-slate-50 border border-[#E2E8F0] space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -936,44 +1028,48 @@ export function ComposerView({
                   </span>
                   {domainScope === 'customer' ? (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickCohort('active_pipeline')}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                      >
-                        Engaged Pipeline (Stage 2+)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickCohort('tier1_legal_audit')}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
-                      >
-                        Tier I · CCO/GC &amp; CAE
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickCohort('tier1_finance_proc')}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
-                      >
-                        Tier I · CFO &amp; CPO
-                      </button>
+                      {[
+                        { id: 'active_pipeline', label: 'Engaged Pipeline (Stage 2+)' },
+                        { id: 'tier1_legal_audit', label: 'Tier I · CCO/GC & CAE' },
+                        { id: 'tier1_finance_proc', label: 'Tier I · CFO & CPO' },
+                      ].map((qc) => (
+                        <button
+                          key={qc.id}
+                          type="button"
+                          onClick={() =>
+                            applyQuickCohort(
+                              qc.id as 'active_pipeline' | 'tier1_legal_audit' | 'tier1_finance_proc'
+                            )
+                          }
+                          className={`px-2.5 py-1 text-[11px] font-medium rounded-[4px] border transition-colors ${
+                            activeQuickCohort === qc.id
+                              ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                              : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
+                          }`}
+                        >
+                          {qc.label}
+                        </button>
+                      ))}
                     </>
                   ) : (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickCohort('hot_signals')}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                      >
-                        Hot Signals (Opened / Portal)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyQuickCohort('uncontacted')}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-[4px] bg-white text-slate-700 border border-[#E2E8F0] hover:bg-slate-100"
-                      >
-                        Uncontacted Queue
-                      </button>
+                      {[
+                        { id: 'hot_signals', label: 'Hot Signals (Opened / Portal)' },
+                        { id: 'uncontacted', label: 'Uncontacted Queue' },
+                      ].map((qc) => (
+                        <button
+                          key={qc.id}
+                          type="button"
+                          onClick={() => applyQuickCohort(qc.id as 'hot_signals' | 'uncontacted')}
+                          className={`px-2.5 py-1 text-[11px] font-medium rounded-[4px] border transition-colors ${
+                            activeQuickCohort === qc.id
+                              ? 'bg-[#0D1520] text-white border-[#0D1520]'
+                              : 'bg-white text-slate-700 border-[#E2E8F0] hover:bg-slate-100'
+                          }`}
+                        >
+                          {qc.label}
+                        </button>
+                      ))}
                     </>
                   )}
                 </div>
@@ -993,91 +1089,91 @@ export function ComposerView({
                   )}
                   <button
                     type="button"
-                    onClick={() => onChangeSelectedIds([])}
+                    onClick={() => {
+                      setActiveQuickCohort(null);
+                      setSelectedRegions([]);
+                      setSelectedSectors([]);
+                      setSelectedPersonas([]);
+                      setSelectedTiers([]);
+                      setSelectedStages([]);
+                      setCooldownDays(0);
+                      onChangeSelectedIds([]);
+                    }}
                     className="text-slate-500 hover:text-slate-800 hover:underline inline-flex items-center gap-1"
                   >
                     <RotateCcw size={11} />
-                    Clear
+                    Reset Filters &amp; Clear
                   </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
-                <select
-                  value={regionFilter}
-                  onChange={(e) => setRegionFilter(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                >
-                  {facetOptions.regions.map((r) => (
-                    <option key={r} value={r}>
-                      {r === 'All' ? 'Region: All' : r}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectDropdown
+                  label="Region"
+                  options={facetOptions.regions}
+                  selected={selectedRegions}
+                  onChange={(next) => {
+                    setActiveQuickCohort(null);
+                    setSelectedRegions(next);
+                  }}
+                />
 
-                <select
-                  value={personaFilter}
-                  onChange={(e) => setPersonaFilter(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                >
-                  {facetOptions.personas.map((p) => (
-                    <option key={p} value={p}>
-                      {p === 'All'
-                        ? domainScope === 'customer'
-                          ? 'Persona: All'
-                          : 'Priority: All'
-                        : p}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectDropdown
+                  label={domainScope === 'customer' ? 'Persona' : 'Priority'}
+                  options={facetOptions.personas}
+                  selected={selectedPersonas}
+                  onChange={(next) => {
+                    setActiveQuickCohort(null);
+                    setSelectedPersonas(next);
+                  }}
+                />
 
                 {domainScope === 'customer' && (
                   <>
-                    <select
-                      value={sectorFilter}
-                      onChange={(e) => setSectorFilter(e.target.value)}
-                      className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                    >
-                      {facetOptions.sectors.map((s) => (
-                        <option key={s} value={s}>
-                          {s === 'All' ? 'Sector: All' : s}
-                        </option>
-                      ))}
-                    </select>
+                    <MultiSelectDropdown
+                      label="Sector"
+                      options={facetOptions.sectors}
+                      selected={selectedSectors}
+                      searchable
+                      onChange={(next) => {
+                        setActiveQuickCohort(null);
+                        setSelectedSectors(next);
+                      }}
+                    />
 
-                    <select
-                      value={tierFilter}
-                      onChange={(e) => setTierFilter(e.target.value)}
-                      className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                    >
-                      <option value="All">Tier: All</option>
-                      <option value="Tier I">Tier I</option>
-                      <option value="Tier II">Tier II</option>
-                    </select>
+                    <MultiSelectDropdown
+                      label="Tier"
+                      options={['Tier I', 'Tier II']}
+                      selected={selectedTiers}
+                      onChange={(next) => {
+                        setActiveQuickCohort(null);
+                        setSelectedTiers(next);
+                      }}
+                    />
                   </>
                 )}
 
-                <select
-                  value={stageFilter}
-                  onChange={(e) => setStageFilter(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
-                >
-                  {facetOptions.stages.map((st) => (
-                    <option key={st} value={st}>
-                      {st === 'All' ? 'Stage: All' : st}
-                    </option>
-                  ))}
-                </select>
+                <MultiSelectDropdown
+                  label="Stage"
+                  options={facetOptions.stages}
+                  selected={selectedStages}
+                  searchable
+                  onChange={(next) => {
+                    setActiveQuickCohort(null);
+                    setSelectedStages(next);
+                  }}
+                />
 
                 <select
                   value={cooldownDays}
                   onChange={(e) => setCooldownDays(Number(e.target.value))}
+                  title="Skip contacts already emailed within the selected number of days"
                   className="px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-[4px] text-slate-700"
                 >
                   <option value={0}>Cooldown: Off</option>
-                  <option value={4}>Skip &lt;4d</option>
-                  <option value={7}>Skip &lt;7d</option>
-                  <option value={14}>Skip &lt;14d</option>
+                  <option value={4}>Skip emailed &lt;4d</option>
+                  <option value={7}>Skip emailed &lt;7d</option>
+                  <option value={14}>Skip emailed &lt;14d</option>
                 </select>
               </div>
             </div>
@@ -1196,8 +1292,8 @@ export function ComposerView({
                 Cancel Sequence
               </button>
               <span className="text-xs text-slate-500 font-mono">
-              Showing {Math.min(150, filteredRecipients.length)} of {filteredRecipients.length} matching contacts
-            </span>
+                Showing {Math.min(150, filteredRecipients.length)} of {filteredRecipients.length} matching contacts
+              </span>
             </div>
             <button
               type="button"
@@ -1213,7 +1309,7 @@ export function ComposerView({
       )}
 
       {/* ===================================================================== */}
-      {/* STEP 2 SCREEN: CRAFT AI MESSAGE                                       */}
+      {/* STEP 2 SCREEN: CRAFT AI MESSAGE (FIRST NAME MERGE VARIABLE ONLY)      */}
       {/* ===================================================================== */}
       {viewMode === 'wizard' && step === 2 && (
         <div className="bg-white border border-[#E2E8F0] rounded-[6px] p-6 space-y-5">
@@ -1223,7 +1319,7 @@ export function ComposerView({
                 Step 2: Craft Personalized Message
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pick a Fortifai GTM angle, synthesize dossier-grounded AI opening hooks, and refine copy.
+                Pick a Fortifai GTM angle, optionally synthesize dossier-grounded AI opening lines, and refine copy.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1290,29 +1386,19 @@ export function ComposerView({
             />
           </div>
 
-          {/* Merge Variables */}
+          {/* Single Dynamic Merge Variable: First Name */}
           <div>
             <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-1.5">
-              Click to Insert Dynamic Merge Variable
+              Dynamic Merge Variable
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {[
-                '{{first_name}}',
-                '{{organization}}',
-                '{{title}}',
-                '{{region}}',
-                '{{custom_hook}}',
-                ...scopedCustomFields.map((cf) => `{{custom.${cf.field_key}}}`),
-              ].map((token) => (
-                <button
-                  key={token}
-                  type="button"
-                  onClick={() => insertTokenAtCursor(token)}
-                  className="px-2.5 py-1 text-[11px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-[4px] border border-[#E2E8F0]"
-                >
-                  {token}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => insertTokenAtCursor('{{first_name}}')}
+                className="px-2.5 py-1 text-[11px] font-mono bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-[4px] border border-[#E2E8F0]"
+              >
+                {'{{first_name}}'} · First Name
+              </button>
             </div>
           </div>
 
@@ -1610,7 +1696,7 @@ export function ComposerView({
 
           {/* Safe Mode & Final Dispatch Footer */}
           <div className="pt-4 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setStep(2)}
@@ -1628,7 +1714,7 @@ export function ComposerView({
                 Cancel Sequence
               </button>
 
-              <span className="text-xs text-slate-500 flex items-center gap-1.5">
+              <span className="text-xs text-slate-500 flex items-center gap-1.5 ml-2">
                 <ShieldCheck size={14} className="text-emerald-700" />
                 <span>
                   <strong>{verifiedSelectedCount}</strong> live verified ·{' '}
