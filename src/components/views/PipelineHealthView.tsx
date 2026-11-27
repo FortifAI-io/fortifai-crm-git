@@ -357,104 +357,41 @@ export function PipelineHealthView({
   return (
     <div className="p-5 space-y-5 max-w-[1600px] w-full mx-auto">
       {/* Top Autonomous Health Command Strip (4 Cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-medium text-[var(--tx-muted)] flex items-center gap-1.5">
-              <Gauge size={13} className="text-sky-400" />
-              Autonomous Health Score
-            </span>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${healthBadge.cls}`}>
-              {healthBadge.label}
-            </span>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl px-5 py-4">
+          <div className="text-xs font-medium text-[var(--tx-muted)] truncate">
+            Autonomous Health Score
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums text-[var(--tx-primary)]">
-              {engine.compositeHealthScore}
-              <span className="text-sm font-normal text-[var(--tx-muted)]">/100</span>
-            </span>
-            <span className="text-[11px] text-rose-400 font-medium">
-              {engine.failingMetrics.length} failing rules
-            </span>
+          <div className="mt-1.5 text-3xl font-bold text-[var(--tx-primary)] tabular-nums truncate">
+            {engine.compositeHealthScore}
+            <span className="text-base font-normal text-[var(--tx-muted)]">/100</span>
           </div>
-          <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Coverage ({rules.scoreWeights.coverage}%) · Hygiene ({rules.scoreWeights.velocityHygiene}%) · Qual ({rules.scoreWeights.qualificationDepth}%)
+          <div className="mt-1.5 text-xs text-[var(--tx-secondary)] truncate">
+            {Number(engine.compositeHealthScore) >= 70 ? 'On track against FY27 benchmarks' : 'Needs pipeline coverage & stage progression'}
           </div>
         </div>
 
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
-              AI Risk-Adjusted ARR (FY27)
-            </span>
-            <span className="text-[11px] font-mono text-[var(--tx-muted)]">
-              Target {formatMillions(arrTarget2027)}
-            </span>
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl px-5 py-4">
+          <div className="text-xs font-medium text-[var(--tx-muted)] truncate">
+            Weighted ARR (FY27)
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums text-[var(--tx-primary)]">
-              {formatMillions(engine.aiRiskAdjustedArr)}
-            </span>
-            <span className="text-[11px] font-mono text-rose-400">
-              {engine.weightedAttainmentPct}% of target
-            </span>
+          <div className="mt-1.5 text-3xl font-bold text-[var(--tx-primary)] tabular-nums truncate">
+            {formatMillions(arrTarget2027)}
           </div>
-          <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Rep stated: {formatMillions(engine.repWeightedArr)} (discounted for &gt;{rules.staleSlaDays}d SLA)
+          <div className="mt-1.5 text-xs text-[var(--tx-secondary)] tabular-nums truncate">
+            {engine.weightedAttainmentPct}% of {formatMillions(arrTarget2027)} target
           </div>
         </div>
 
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
-              FY27 Coverage Ratio
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-              FAILING ({coverageMultiple}x req)
-            </span>
+        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl px-5 py-4">
+          <div className="text-xs font-medium text-[var(--tx-muted)] truncate">
+            FY27 Coverage Ratio
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums text-[var(--tx-primary)]">
-              {engine.coverageMultActual}x
-            </span>
-            <span className="text-[11px] font-mono text-[var(--tx-muted)]">
-              {formatMillions(engine.totalPipelineArr)} / {formatMillions(engine.requiredPipelineArr)}
-            </span>
+          <div className="mt-1.5 text-3xl font-bold text-[var(--tx-primary)] tabular-nums truncate">
+            {coverageMultiple}x
           </div>
-          <div className="text-[11px] text-[var(--tx-muted)] mt-1">
-            Deficit: {formatMillions(engine.coverageGapArr)} ({Math.ceil(engine.coverageGapArr / avgAcvAssumption)} deals)
-          </div>
-        </div>
-
-        <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11.5px] font-medium text-[var(--tx-muted)]">
-              SLA Breach Exposure (&gt;{rules.staleSlaDays}d)
-            </span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-              {engine.staleSharePct}% STALE (≤{rules.maxStaleSharePct}% max)
-            </span>
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums text-rose-400">
-              {formatMillions(engine.staleArr)}
-            </span>
-            <span className="text-[11px] text-[var(--tx-muted)]">
-              across {engine.staleDeals.length} stalled deals
-            </span>
-          </div>
-          <div className="text-[11px] text-[var(--tx-muted)] mt-1 flex items-center justify-between">
-            <span>Governed by Settings Rules</span>
-            {canConfigureRules && (
-              <button
-                type="button"
-                onClick={onOpenSettingsRules}
-                className="inline-flex items-center gap-1 text-sky-400 hover:underline font-medium"
-              >
-                <Settings size={11} />
-                Edit Rules
-              </button>
-            )}
+          <div className="mt-1.5 text-xs text-[var(--tx-secondary)] tabular-nums truncate">
+            {formatMillions(engine.totalPipelineArr)} / {formatMillions(engine.requiredPipelineArr)} required
           </div>
         </div>
       </div>
@@ -526,9 +463,7 @@ export function PipelineHealthView({
             <h2 className="text-[13.5px] font-semibold text-[var(--tx-primary)]">
               Horizon Health &amp; Coverage Diagnostics (Full Year 2027 &amp; Next 2 Quarters)
             </h2>
-            <p className="text-[11.5px] text-[var(--tx-muted)]">
-              Evaluates immediate close readiness for Q1 2027, build velocity for Q2 2027, and full-year quota attainment.
-            </p>
+            
           </div>
 
           <div className="flex flex-wrap items-center gap-2 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-md px-3 py-1.5 text-[11.5px]">
@@ -589,7 +524,7 @@ export function PipelineHealthView({
 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-[var(--tx-muted)]">Weighted Attainment vs Quota</span>
+                    <span className="text-[var(--tx-muted)]">Attainment</span>
                     <span className="font-semibold tabular-nums text-[var(--tx-primary)]">
                       {h.covMult}x wtd ({formatMillions(h.aiWtdArr)} / {formatMillions(h.targetArr)} target)
                     </span>
