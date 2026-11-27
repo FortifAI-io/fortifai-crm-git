@@ -396,61 +396,19 @@ export function PipelineHealthView({
         </div>
       </div>
 
-      {/* SECTION 1: Failing Health Metrics Diagnostic Panel */}
-      <div className="bg-[var(--bg-surface)] border border-rose-500/35 rounded-lg overflow-hidden">
-        <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
-          
-          {canConfigureRules && (
-            <button
-              type="button"
-              onClick={onOpenSettingsRules}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
-            >
-              <Sliders size={12} className="text-sky-400" />
-              Configure Benchmarks &amp; Formulas
-            </button>
-          )}
+      {/* Configure Benchmarks & Formulas Action */}
+      {canConfigureRules && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onOpenSettingsRules}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
+          >
+            <Sliders size={12} className="text-sky-400" />
+            Configure Benchmarks &amp; Formulas
+          </button>
         </div>
-
-        <div className="divide-y divide-[var(--border-subtle)]">
-          {engine.failingMetrics.map((fm) => (
-            <div
-              key={fm.id}
-              className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[var(--bg-hover)] transition-colors text-[12.5px]"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${
-                    fm.severity === "critical"
-                      ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                      : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                  }`}
-                >
-                  {fm.severity === "critical" ? "Failing" : "At Risk"}
-                </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
-                  {fm.horizon}
-                </span>
-                <span className="font-semibold text-[var(--tx-primary)] truncate">
-                  {fm.metricName}
-                </span>
-                <span className="hidden md:inline text-[11.5px] text-[var(--tx-muted)] truncate">
-                  · {fm.rootCause}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-5 shrink-0 font-mono text-[12px]">
-                <span className="text-rose-400 font-semibold">{fm.actualLabel}</span>
-                <span className="text-[var(--tx-muted)]">Target: {fm.benchmarkLabel}</span>
-                <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 text-[11px]">
-                  {fm.gapLabel}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+      )}
       {/* SECTION 2: 3-Horizon Health Cockpit (Full Year 2027 + Next 2 Quarters: Q1 2027 & Q2 2027) */}
       <div className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
