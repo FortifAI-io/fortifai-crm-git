@@ -370,7 +370,7 @@ export function CustomersView({
   const [insightsOpen, setInsightsOpen] = useState(false);
 
   const dbMetrics = useMemo(() => {
-    const scopeList = filteredCustomers;
+    const scopeList = customers;
     const totalContacts = scopeList.length;
     const uniqueOrgs = new Set(scopeList.map((c) => (c.organization || "").trim().toLowerCase()).filter(Boolean)).size;
     const tier1Count = scopeList.filter((c) => (c.tier || "Tier I") === "Tier I").length;
@@ -441,7 +441,7 @@ export function CustomersView({
       topSectors,
       multiThreadedOrgs,
     };
-  }, [filteredCustomers]);
+  }, [customers]);
 
   return (
     <div className="p-6 space-y-5 max-w-[1600px] w-full mx-auto">
