@@ -376,10 +376,10 @@ export function PipelineHealthView({
             Weighted ARR (FY27)
           </div>
           <div className="mt-1.5 text-3xl font-bold text-[var(--tx-primary)] tabular-nums truncate">
-            {formatMillions(arrTarget2027)}
+            {formatMillions(pipelineAnalytics.weightedPipelineArr)}
           </div>
           <div className="mt-1.5 text-xs text-[var(--tx-secondary)] tabular-nums truncate">
-            {engine.weightedAttainmentPct}% of {formatMillions(arrTarget2027)} target
+            {pipelineAnalytics.weightedAttainmentPct}% of {formatMillions(arrTarget2027)} target
           </div>
         </div>
 
@@ -388,10 +388,10 @@ export function PipelineHealthView({
             FY27 Coverage Ratio
           </div>
           <div className="mt-1.5 text-3xl font-bold text-[var(--tx-primary)] tabular-nums truncate">
-            {coverageMultiple}x
+            {pipelineAnalytics.pipelineCoverageMultipleActual.toFixed(2)}x
           </div>
           <div className="mt-1.5 text-xs text-[var(--tx-secondary)] tabular-nums truncate">
-            {formatMillions(engine.totalPipelineArr)} / {formatMillions(engine.requiredPipelineArr)} required
+            {formatMillions(pipelineAnalytics.actualPipelineArr)} / {formatMillions(pipelineAnalytics.recommendedCoverageArr)} ({coverageMultiple}x req)
           </div>
         </div>
       </div>
