@@ -442,9 +442,37 @@ async function startServer() {
       };
       const token = signSessionToken(claims);
 
-      return res.status(200).json({
-        ok: true,
-        token,
+      let accessLogId: string | null = null;
+      const logClient = getSupabaseAdmin();
+      if (logClient) {
+        accessLogId = `alog_${crypto.randomUUID().slice(0, 12)}`;
+        const forwarded = req.headers["x-forwarded-for"];
+        const ipAddress = Array.isArray(forwarded)
+          ? forwarded[0]
+          : typeof forwarded === "string"
+          ? forwarded.split(",")[0].trim()
+          : req.socket?.remoteAddress || null;
+        const userAgent =
+          typeof req.headers["user-agent"] === "string"
+            ? req.headers["user-agent"].slice(0, 300)
+            : null;
+        try {
+          await Promise.race([
+            logClient.from("user_access_logs").insert({
+              id: accessLogId,
+              user_id: String(dbUser.id || ""),
+              user_email: email,
+              user_name: String(dbUser.full_name || email.split("@")[0]),
+              user_role: role,
+              login_at: new Date().toISOString(),
+              ip_address: ipAddress,
+              user_agent: userAgent,
+            }),
+            new Promise((r) => setTimeout(r, 1500)),
+          ]);
+        } catch {}
+      }
+      return res.status(200).json({ ok: true, token, accessLogId,
         user: {
           id: dbUser.id || `usr_${email}`,
           email,
@@ -1177,94 +1205,153 @@ function escapeHtmlBasic(str: string): string {
       : null;
 
     const accessLogId = typeof body.accessLogId === 'string' ? body.accessLogId.trim() : '';
-    const email = (claims?.email || (typeof body.email === 'string' ? body.email.trim().toLowerCase() : '')).toLowerCase();
-    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 64) : 'manual_signout';
+    const email = (
+      claims?.email ||
+      (typeof body.email === 'string' ? body.email.trim().toLowerCase() : '')
+    ).toLowerCase();
+    const reason =
+      typeof body.reason === 'string' ? body.reason.trim().slice(0, 64) : 'manual_signout';
     const nowIso = new Date().toISOString();
 
-    const supabaseAdmin = getServiceSupabaseClient();
-    if (supabaseAdmin) {
+    const sbAdmin = getSupabaseAdmin();
+    if (sbAdmin) {
       try {
-        if (accessLogId) {
-          await supabaseAdmin
-            .from('user_access_logs')
-            .update({ logout_at: nowIso, logout_reason: reason })
-            .eq('id', accessLogId)
-            .is('logout_at', null);
-        } else if (email && isAllowedDomainEmail(email)) {
-          const { data: latestOpen } = await supabaseAdmin
-            .from('user_access_logs')
-            .select('id')
-            .eq('user_email', email)
-            .is('logout_at', null)
-            .order('login_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (latestOpen?.id) {
-            await supabaseAdmin
-              .from('user_access_logs')
-              .update({ logout_at: nowIso, logout_reason: reason })
-              .eq('id', latestOpen.id);
-          }
-        }
-      } catch {
-        // Non-blocking
-      }
+        await Promise.race([
+          (async () => {
+            if (accessLogId) {
+              await sbAdmin
+                .from('user_access_logs')
+                .update({ logout_at: nowIso, logout_reason: reason })
+                .eq('id', accessLogId)
+                .is('logout_at', null);
+            } else if (email && isAllowedDomainEmail(email)) {
+              const { data: latestOpen } = await sbAdmin
+                .from('user_access_logs')
+                .select('id')
+                .eq('user_email', email)
+                .is('logout_at', null)
+                .order('login_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (latestOpen?.id) {
+                await sbAdmin
+                  .from('user_access_logs')
+                  .update({ logout_at: nowIso, logout_reason: reason })
+                  .eq('id', latestOpen.id);
+              }
+            }
+          })(),
+          new Promise((r) => setTimeout(r, 2000)),
+        ]);
+      } catch {}
     }
 
-    res.json({ ok: true, logoutAt: nowIso });
+    res.status(200).json({ ok: true, logoutAt: nowIso });
   });
 
   app.get('/api/admin/access-logs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-    const claims = req.session;
-    if (!claims || claims.role !== 'super_admin') {
-      res.status(403).json({
-        ok: false,
-        error: 'Access denied. Only super_admin users can view workspace access logs.',
-      });
-      return;
-    }
-
-    const supabaseAdmin = getServiceSupabaseClient();
-    if (!supabaseAdmin) {
-      res.status(503).json({
-        ok: false,
-        error: 'SUPABASE_SERVICE_ROLE_KEY is not configured on the server.',
-      });
-      return;
-    }
-
-    // Authoritative check in crm_users to ensure caller is still an active super_admin
     try {
-      const dbCaller = await fetchCrmUserByEmail(claims.email);
-      if (dbCaller && (dbCaller.role !== 'super_admin' || dbCaller.is_active === false)) {
+      const claims = req.session;
+      if (!claims || claims.role !== 'super_admin') {
         res.status(403).json({
           ok: false,
-          error: 'Access denied. Active super_admin role required.',
+          error: 'Access denied. Only super_admin users can view workspace access logs.',
         });
         return;
       }
-    } catch {
-      // Fall back to verified JWT claims
-    }
 
-    const { data, error } = await supabaseAdmin
-      .from('user_access_logs')
-      .select('id, user_id, user_email, user_name, user_role, login_at, logout_at, logout_reason, ip_address, user_agent')
-      .order('login_at', { ascending: false })
-      .limit(500);
+      const sbAdmin = getSupabaseAdmin();
+      if (!sbAdmin) {
+        res.status(503).json({
+          ok: false,
+          error: 'SUPABASE_SERVICE_ROLE_KEY is not configured on the server.',
+        });
+        return;
+      }
 
-    if (error) {
+      try {
+        const callerRes = await Promise.race([
+          sbAdmin
+            .from('crm_users')
+            .select('role, is_active')
+            .eq('email', claims.email.toLowerCase())
+            .maybeSingle(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+        ]);
+        if (
+          callerRes &&
+          callerRes.data &&
+          (callerRes.data.role !== 'super_admin' || callerRes.data.is_active === false)
+        ) {
+          res.status(403).json({
+            ok: false,
+            error: 'Access denied. Active super_admin role required.',
+          });
+          return;
+        }
+      } catch {}
+
+      const queryResult = await Promise.race([
+        sbAdmin
+          .from('user_access_logs')
+          .select(
+            'id, user_id, user_email, user_name, user_role, login_at, logout_at, logout_reason, ip_address, user_agent'
+          )
+          .order('login_at', { ascending: false })
+          .limit(500),
+        new Promise<{ data: null; error: { message: string; code?: string } }>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                data: null,
+                error: {
+                  message:
+                    'Supabase query timed out after 4.5s. Verify SUPABASE_URL in Vercel Environment Variables.',
+                  code: 'TIMEOUT',
+                },
+              }),
+            4500
+          )
+        ),
+      ]);
+
+      const { data, error } = queryResult;
+      if (error) {
+        const msg = String(error.message || '');
+        const code = String((error as { code?: string }).code || '');
+        const isMissingTable =
+          code === '42P01' ||
+          code === 'PGRST205' ||
+          /user_access_logs.*does not exist|schema cache|Could not find the table/i.test(msg);
+
+        if (isMissingTable) {
+          res.status(200).json({
+            ok: true,
+            logs: [],
+            tableMissing: true,
+            warning:
+              'Table public.user_access_logs has not been created in Supabase yet.',
+          });
+          return;
+        }
+
+        res.status(500).json({
+          ok: false,
+          error: msg || 'Failed to load user_access_logs from Supabase.',
+        });
+        return;
+      }
+
+      res.status(200).json({ ok: true, logs: data || [] });
+    } catch (err: unknown) {
       res.status(500).json({
         ok: false,
-        error: error.message || 'Failed to load user_access_logs from Supabase.',
+        error: err instanceof Error ? err.message : 'Unexpected server error loading access logs.',
       });
-      return;
     }
-
-    res.json({ ok: true, logs: data || [] });
   });
 
-app.post('/api/auth/session', async (req: Request, res: Response) => {
+  app.post('/api/auth/session', async (req: Request, res: Response) => {
     const body = (req.body || {}) as {
       email?: string;
       role?: string;
@@ -1362,36 +1449,7 @@ app.post('/api/auth/session', async (req: Request, res: Response) => {
     };
 
     const token = signSessionToken(claims);
-    let accessLogId: string | null = null;
-    if (supabaseAdmin) {
-      accessLogId = `alog_${crypto.randomUUID().slice(0, 12)}`;
-      const forwarded = req.headers["x-forwarded-for"];
-      const ipAddress = Array.isArray(forwarded)
-        ? forwarded[0]
-        : typeof forwarded === "string"
-        ? forwarded.split(",")[0].trim()
-        : req.socket?.remoteAddress || null;
-      const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 300) : null;
-      try {
-        await Promise.race([
-          supabaseAdmin.from("user_access_logs").insert({
-            id: accessLogId,
-            user_id: userPayload.id,
-            user_email: userPayload.email,
-            user_name: userPayload.full_name,
-            user_role: userPayload.role,
-            login_at: new Date().toISOString(),
-            ip_address: ipAddress,
-            user_agent: userAgent,
-          }),
-          new Promise((r) => setTimeout(r, 1500)),
-        ]);
-      } catch {
-        // Non-blocking if table has not been created yet
-      }
-    }
-
-    res.json({ ok: true, token, accessLogId, claims });
+    res.json({ ok: true, token, claims });
   });
 
   app.post('/api/send-batch', requireAuth, async (req: AuthenticatedRequest, res: Response) => {

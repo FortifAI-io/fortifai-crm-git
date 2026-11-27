@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Check,
   Clock,
+  Copy,
+  Database,
   Download,
   LogIn,
   LogOut,
@@ -29,6 +32,24 @@ interface AccessLogViewProps {
   currentUser: CrmUser;
   sessionToken: string | null;
 }
+
+const SETUP_SQL = `CREATE TABLE IF NOT EXISTS public.user_access_logs (
+  id text PRIMARY KEY,
+  user_id text,
+  user_email text NOT NULL,
+  user_name text,
+  user_role text,
+  login_at timestamptz NOT NULL DEFAULT now(),
+  logout_at timestamptz,
+  logout_reason text,
+  ip_address text,
+  user_agent text
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_access_logs_login_at
+  ON public.user_access_logs (login_at DESC);
+
+ALTER TABLE public.user_access_logs ENABLE ROW LEVEL SECURITY;`;
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -68,6 +89,8 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
   const [logs, setLogs] = useState<UserAccessLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tableMissing, setTableMissing] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'signed_out'>('all');
   const [dateFilter, setDateFilter] = useState('');
@@ -76,43 +99,86 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
 
   const fetchLogs = useCallback(async () => {
     if (!isSuperAdmin) return;
-    const effectiveToken =
-      sessionToken ||
-      (() => {
-        try {
-          return localStorage.getItem('fortifai_scale_session_token_v1');
-        } catch {
-          return null;
-        }
-      })();
-    if (!effectiveToken) {
-      setError('Please sign out and sign back in once to initialize your super_admin session token.');
-      return;
-    }
     setLoading(true);
     setError(null);
+
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 8000);
+
     try {
+      let effectiveToken = sessionToken;
+      if (!effectiveToken) {
+        try {
+          effectiveToken = localStorage.getItem('fortifai_scale_session_token_v1');
+        } catch {
+          effectiveToken = null;
+        }
+      }
+      if (!effectiveToken) {
+        const sRes = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: currentUser.email,
+            role: currentUser.role,
+            permissions: currentUser.permissions,
+            is_active: currentUser.is_active,
+          }),
+          signal: ctrl.signal,
+        });
+        const sJson = (await sRes.json()) as { ok?: boolean; token?: string };
+        if (sJson.ok && sJson.token) {
+          effectiveToken = sJson.token;
+          try {
+            localStorage.setItem('fortifai_scale_session_token_v1', sJson.token);
+          } catch {}
+        }
+      }
+
+      if (!effectiveToken) {
+        setError('Unable to verify super_admin session token. Please sign out and sign back in.');
+        return;
+      }
+
       const res = await fetch('/api/admin/access-logs', {
         headers: {
           Authorization: `Bearer ${effectiveToken}`,
         },
+        signal: ctrl.signal,
       });
-      const data = (await res.json()) as {
+
+      const rawText = await res.text();
+      let data: {
         ok?: boolean;
         logs?: UserAccessLogEntry[];
+        tableMissing?: boolean;
         error?: string;
-      };
-      if (!res.ok || !data.ok) {
-        setError(data.error || 'Unable to fetch user access logs.');
+      } = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setError(`Server returned HTTP ${res.status}. Please retry.`);
         return;
       }
+
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Unable to fetch user access logs (HTTP ${res.status}).`);
+        return;
+      }
+
+      setTableMissing(Boolean(data.tableMissing));
       setLogs(Array.isArray(data.logs) ? data.logs : []);
-    } catch {
-      setError('Network error while loading user access logs.');
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Request timed out after 8 seconds. Click Refresh to retry.');
+      } else {
+        setError('Network error while loading user access logs.');
+      }
     } finally {
+      window.clearTimeout(timer);
       setLoading(false);
     }
-  }, [isSuperAdmin, sessionToken]);
+  }, [isSuperAdmin, sessionToken, currentUser]);
 
   useEffect(() => {
     void fetchLogs();
@@ -153,7 +219,17 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
   }, [logs]);
 
   const handleExportCsv = () => {
-    const header = ['Date', 'User Name', 'Email', 'Role', 'Login Time', 'Log-Off Time', 'Duration', 'Exit Type', 'IP Address'];
+    const header = [
+      'Date',
+      'User Name',
+      'Email',
+      'Role',
+      'Login Time',
+      'Log-Off Time',
+      'Duration',
+      'Exit Type',
+      'IP Address',
+    ];
     const rows = filteredLogs.map((r) => [
       formatDate(r.login_at),
       r.user_name || '',
@@ -177,6 +253,14 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
     URL.revokeObjectURL(url);
   };
 
+  const handleCopySql = async () => {
+    try {
+      await navigator.clipboard.writeText(SETUP_SQL);
+      setCopiedSql(true);
+      window.setTimeout(() => setCopiedSql(false), 2200);
+    } catch {}
+  };
+
   if (!isSuperAdmin) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
@@ -197,8 +281,7 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
   }
 
   return (
-    <div className="p-6 max-w-[1440px] w-full mx-auto space-y-5">
-      {/* Header */}
+    <div className="p-6 w-full min-w-0 max-w-full space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -222,7 +305,7 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 disabled:opacity-50 transition-colors"
           >
             <RefreshCw size={13} className={loading ? 'animate-spin text-sky-400' : 'text-sky-400'} />
-            Refresh
+            {loading ? 'Refreshing...' : 'Refresh'}
           </button>
           <button
             type="button"
@@ -236,7 +319,28 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
         </div>
       </div>
 
-      {/* KPI Summary Strip */}
+      {tableMissing && (
+        <div className="p-4 rounded-xl border border-sky-500/35 bg-sky-500/10 space-y-2.5 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-semibold text-sky-300">
+              <Database size={14} />
+              One-Time Setup: Run this SQL in your Supabase SQL Editor to create <code className="font-mono">public.user_access_logs</code>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopySql()}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400"
+            >
+              {copiedSql ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+              {copiedSql ? 'Copied SQL' : 'Copy SQL'}
+            </button>
+          </div>
+          <pre className="p-3 rounded-lg bg-[var(--bg-canvas)] border border-[var(--border-subtle)] font-mono text-[11px] text-[var(--tx-secondary)] overflow-x-auto">
+            {SETUP_SQL}
+          </pre>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
           <div className="flex items-center justify-between text-[11px] text-[var(--tx-muted)]">
@@ -291,7 +395,6 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
         </div>
       </div>
 
-      {/* Filter Bar */}
       <div className="p-3 rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search
@@ -344,14 +447,12 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
         </div>
       </div>
 
-      {/* Error Notice */}
       {error && (
         <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300">
           {error}
         </div>
       )}
 
-      {/* Access Log Table */}
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -376,7 +477,9 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
               ) : filteredLogs.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-[var(--tx-muted)]">
-                    No access log entries found. New sign-ins and sign-offs will appear here automatically.
+                    {tableMissing
+                      ? 'Create public.user_access_logs using the SQL snippet above, then click Refresh.'
+                      : 'No access log entries recorded yet. Sign out and sign back in once to record your first session.'}
                   </td>
                 </tr>
               ) : (

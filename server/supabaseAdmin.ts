@@ -29,18 +29,43 @@ export function isServiceSupabaseConfigured(): boolean {
 }
 
 export function getServiceSupabaseClient(): SupabaseClient | null {
-  const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const rawUrl = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    'https://xwigfdsvknsgnlrbfshs.supabase.co'
+  )
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+
+  const url = /^https?:\/\//i.test(rawUrl)
+    ? rawUrl
+    : rawUrl.includes('.')
+    ? `https://${rawUrl}`
+    : 'https://xwigfdsvknsgnlrbfshs.supabase.co';
+
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+
   if (!url || !serviceKey || serviceKey.startsWith('MY_')) {
     return null;
   }
 
   const key = `${url}::${serviceKey.slice(0, 12)}`;
   if (!cachedAdminClient || cachedConfigKey !== key) {
-    cachedAdminClient = createClient(resolveSbUrl(((url) || "").trim().replace(/^['"]|['"]$/g), "").startsWith("http") ? (url).trim().replace(/^['"]|['"]$/g, "") : "https://xwigfdsvknsgnlrbfshs.supabase.co", serviceKey, {
+    cachedAdminClient = createClient(url, serviceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
+      },
+      global: {
+        fetch: (input, init) => {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 4500);
+          return fetch(input, { ...init, signal: init?.signal || ctrl.signal }).finally(() =>
+            clearTimeout(timer)
+          );
+        },
       },
     });
     cachedConfigKey = key;

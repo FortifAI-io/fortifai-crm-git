@@ -16,18 +16,6 @@ import {
 
 // server/supabaseAdmin.ts
 import { createClient } from "@supabase/supabase-js";
-function resolveSbUrl(raw) {
-  const cleaned = String(raw || "").trim().replace(/^['"]|['"]$/g, "");
-  if (cleaned) {
-    const withProto = /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
-    try {
-      const u = new URL(withProto);
-      if (u.hostname.includes(".")) return u.origin;
-    } catch {
-    }
-  }
-  return "https://xwigfdsvknsgnlrbfshs.supabase.co";
-}
 var cachedAdminClient = null;
 var cachedConfigKey = "";
 function isServiceSupabaseConfigured() {
@@ -37,17 +25,27 @@ function isServiceSupabaseConfigured() {
   return Boolean(url && serviceKey && !serviceKey.startsWith("MY_"));
 }
 function getServiceSupabaseClient() {
-  const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
-  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://xwigfdsvknsgnlrbfshs.supabase.co").trim().replace(/^['"]|['"]$/g, "");
+  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : rawUrl.includes(".") ? `https://${rawUrl}` : "https://xwigfdsvknsgnlrbfshs.supabase.co";
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim().replace(/^['"]|['"]$/g, "");
   if (!url || !serviceKey || serviceKey.startsWith("MY_")) {
     return null;
   }
   const key = `${url}::${serviceKey.slice(0, 12)}`;
   if (!cachedAdminClient || cachedConfigKey !== key) {
-    cachedAdminClient = createClient(resolveSbUrl((url || "").trim().replace(/^['"]|['"]$/g), "").startsWith("http") ? url.trim().replace(/^['"]|['"]$/g, "") : "https://xwigfdsvknsgnlrbfshs.supabase.co", serviceKey, {
+    cachedAdminClient = createClient(url, serviceKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false
+      },
+      global: {
+        fetch: (input, init) => {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 4500);
+          return fetch(input, { ...init, signal: init?.signal || ctrl.signal }).finally(
+            () => clearTimeout(timer)
+          );
+        }
       }
     });
     cachedConfigKey = key;
@@ -797,7 +795,7 @@ async function handleAskMeRequest(payload, session) {
     crmState.telemetry || [],
     session.permissions
   );
-  const supabaseAdmin2 = getServiceSupabaseClient();
+  const supabaseAdmin = getServiceSupabaseClient();
   const ai = new GoogleGenAI({
     apiKey,
     httpOptions: {
@@ -897,9 +895,9 @@ async function handleAskMeRequest(payload, session) {
           let retried = false;
           let sqlError;
           let rpcHandled = false;
-          if (supabaseAdmin2) {
+          if (supabaseAdmin) {
             try {
-              const { data, error } = await supabaseAdmin2.rpc("execute_crm_readonly_query", {
+              const { data, error } = await supabaseAdmin.rpc("execute_crm_readonly_query", {
                 query_text: check.enforcedSql
               });
               if (!error && Array.isArray(data)) {
@@ -1154,10 +1152,10 @@ async function handleGenerateDossier(payload, generatedByEmail) {
   if (!org) {
     return { ok: false, status: 400, error: "Organization name is required to generate a dossier." };
   }
-  const supabaseAdmin2 = getServiceSupabaseClient();
-  if (supabaseAdmin2 && !payload.forceRefresh) {
+  const supabaseAdmin = getServiceSupabaseClient();
+  if (supabaseAdmin && !payload.forceRefresh) {
     try {
-      const { data: cachedRow, error: cacheErr } = await supabaseAdmin2.from("account_dossiers").select("*").ilike("organization", org).order("generated_at", { ascending: false }).limit(1).maybeSingle();
+      const { data: cachedRow, error: cacheErr } = await supabaseAdmin.from("account_dossiers").select("*").ilike("organization", org).order("generated_at", { ascending: false }).limit(1).maybeSingle();
       if (!cacheErr && cachedRow && cachedRow.dossier_json) {
         const cachedPayload = cachedRow.dossier_json;
         const dossier = {
@@ -1184,15 +1182,15 @@ async function handleGenerateDossier(payload, generatedByEmail) {
   let liveEmailLogs = [];
   let livePortalEvents = [];
   let liveOpps = [];
-  if (supabaseAdmin2) {
+  if (supabaseAdmin) {
     try {
-      const { data: dbContacts } = await supabaseAdmin2.from("contacts").select("*").ilike("organization", org);
+      const { data: dbContacts } = await supabaseAdmin.from("contacts").select("*").ilike("organization", org);
       if (Array.isArray(dbContacts) && dbContacts.length > 0) {
         const contactIds = dbContacts.map((c) => String(c.id));
         const [oppsRes, logsRes, portalRes] = await Promise.all([
-          supabaseAdmin2.from("opportunities").select("*").in("contact_id", contactIds),
-          supabaseAdmin2.from("email_logs").select("*").in("contact_id", contactIds).order("sent_at", { ascending: false }).limit(10),
-          supabaseAdmin2.from("portal_events").select("*").in("contact_id", contactIds).order("created_at", { ascending: false }).limit(10)
+          supabaseAdmin.from("opportunities").select("*").in("contact_id", contactIds),
+          supabaseAdmin.from("email_logs").select("*").in("contact_id", contactIds).order("sent_at", { ascending: false }).limit(10),
+          supabaseAdmin.from("portal_events").select("*").in("contact_id", contactIds).order("created_at", { ascending: false }).limit(10)
         ]);
         liveOpps = oppsRes.data || [];
         liveEmailLogs = logsRes.data || [];
@@ -1438,9 +1436,9 @@ Return ONLY the compact JSON object (<250 words total).`;
       generated_at: generatedAt,
       word_count: countWords(normalizedPayload)
     };
-    if (supabaseAdmin2) {
+    if (supabaseAdmin) {
       try {
-        await supabaseAdmin2.from("account_dossiers").upsert(
+        await supabaseAdmin.from("account_dossiers").upsert(
           {
             id: dossier.id,
             organization: dossier.organization,
@@ -1765,7 +1763,7 @@ app.post("/api/auth/login", async (req, res) => {
     const storedHash = typeof dbUser.password_hash === "string" ? String(dbUser.password_hash) : "";
     const bootstrapPassword = process.env.SCALE_ADMIN_PASSWORD || process.env.RESEND_WEBHOOK_SECRET || "FortifaiScale2026!";
     let passwordValid = false;
-    const supabaseAdmin2 = getSupabaseAdmin();
+    const supabaseAdmin = getSupabaseAdmin();
     const envAdminPw = String(process.env.SCALE_ADMIN_PASSWORD || "").trim();
     if (email === "varun@fortifai.io" && envAdminPw && password.trim() === envAdminPw) {
       passwordValid = true;
@@ -1773,10 +1771,10 @@ app.post("/api/auth/login", async (req, res) => {
       passwordValid = verifyPasswordScrypt(password, storedHash);
     } else if (password.trim() === bootstrapPassword.trim()) {
       passwordValid = true;
-      if (supabaseAdmin2) {
+      if (supabaseAdmin) {
         const initialHash = hashPasswordScrypt(password);
         void Promise.race([
-          supabaseAdmin2.from("crm_users").update({ password_hash: initialHash, last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
+          supabaseAdmin.from("crm_users").update({ password_hash: initialHash, last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
           new Promise((r) => setTimeout(r, 1500))
         ]).catch(() => {
         });
@@ -1788,9 +1786,9 @@ app.post("/api/auth/login", async (req, res) => {
         error: "Invalid email or password."
       });
     }
-    if (supabaseAdmin2 && storedHash) {
+    if (supabaseAdmin && storedHash) {
       void Promise.race([
-        supabaseAdmin2.from("crm_users").update({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
+        supabaseAdmin.from("crm_users").update({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
         new Promise((r) => setTimeout(r, 1500))
       ]).catch(() => {
       });
@@ -1807,9 +1805,34 @@ app.post("/api/auth/login", async (req, res) => {
       exp: Date.now() + 12 * 60 * 60 * 1e3
     };
     const token = signSessionToken(claims);
+    let accessLogId = null;
+    const logClient = getSupabaseAdmin();
+    if (logClient) {
+      accessLogId = `alog_${crypto2.randomUUID().slice(0, 12)}`;
+      const forwarded = req.headers["x-forwarded-for"];
+      const ipAddress = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.socket?.remoteAddress || null;
+      const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 300) : null;
+      try {
+        await Promise.race([
+          logClient.from("user_access_logs").insert({
+            id: accessLogId,
+            user_id: String(dbUser.id || ""),
+            user_email: email,
+            user_name: String(dbUser.full_name || email.split("@")[0]),
+            user_role: role,
+            login_at: (/* @__PURE__ */ new Date()).toISOString(),
+            ip_address: ipAddress,
+            user_agent: userAgent
+          }),
+          new Promise((r) => setTimeout(r, 1500))
+        ]);
+      } catch {
+      }
+    }
     return res.status(200).json({
       ok: true,
       token,
+      accessLogId,
       user: {
         id: dbUser.id || `usr_${email}`,
         email,
@@ -2363,15 +2386,15 @@ app.post("/api/auth/set-password", async (req, res) => {
         error: "Password must be at least 8 characters long."
       });
     }
-    const supabaseAdmin2 = getSupabaseAdmin();
-    if (!supabaseAdmin2) {
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
       return res.status(500).json({
         ok: false,
         error: "SUPABASE_SERVICE_ROLE_KEY is required on the server to store password hashes."
       });
     }
     const newHash = hashPasswordScrypt(newPassword);
-    const { error } = await supabaseAdmin2.from("crm_users").update({ password_hash: newHash }).eq("email", targetEmail);
+    const { error } = await supabaseAdmin.from("crm_users").update({ password_hash: newHash }).eq("email", targetEmail);
     if (error) {
       return res.status(500).json({
         ok: false,
@@ -2392,59 +2415,103 @@ app.post("/api/auth/logout", async (req, res) => {
   const email = (claims?.email || (typeof body.email === "string" ? body.email.trim().toLowerCase() : "")).toLowerCase();
   const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 64) : "manual_signout";
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const supabaseAdmin2 = getServiceSupabaseClient();
-  if (supabaseAdmin2) {
+  const sbAdmin = getSupabaseAdmin();
+  if (sbAdmin) {
     try {
-      if (accessLogId) {
-        await supabaseAdmin2.from("user_access_logs").update({ logout_at: nowIso, logout_reason: reason }).eq("id", accessLogId).is("logout_at", null);
-      } else if (email && isAllowedDomainEmail(email)) {
-        const { data: latestOpen } = await supabaseAdmin2.from("user_access_logs").select("id").eq("user_email", email).is("logout_at", null).order("login_at", { ascending: false }).limit(1).maybeSingle();
-        if (latestOpen?.id) {
-          await supabaseAdmin2.from("user_access_logs").update({ logout_at: nowIso, logout_reason: reason }).eq("id", latestOpen.id);
-        }
-      }
+      await Promise.race([
+        (async () => {
+          if (accessLogId) {
+            await sbAdmin.from("user_access_logs").update({ logout_at: nowIso, logout_reason: reason }).eq("id", accessLogId).is("logout_at", null);
+          } else if (email && isAllowedDomainEmail(email)) {
+            const { data: latestOpen } = await sbAdmin.from("user_access_logs").select("id").eq("user_email", email).is("logout_at", null).order("login_at", { ascending: false }).limit(1).maybeSingle();
+            if (latestOpen?.id) {
+              await sbAdmin.from("user_access_logs").update({ logout_at: nowIso, logout_reason: reason }).eq("id", latestOpen.id);
+            }
+          }
+        })(),
+        new Promise((r) => setTimeout(r, 2e3))
+      ]);
     } catch {
     }
   }
-  res.json({ ok: true, logoutAt: nowIso });
+  res.status(200).json({ ok: true, logoutAt: nowIso });
 });
 app.get("/api/admin/access-logs", requireAuth, async (req, res) => {
-  const claims = req.session;
-  if (!claims || claims.role !== "super_admin") {
-    res.status(403).json({
-      ok: false,
-      error: "Access denied. Only super_admin users can view workspace access logs."
-    });
-    return;
-  }
-  const supabaseAdmin2 = getServiceSupabaseClient();
-  if (!supabaseAdmin2) {
-    res.status(503).json({
-      ok: false,
-      error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server."
-    });
-    return;
-  }
   try {
-    const dbCaller = await fetchCrmUserByEmail(claims.email);
-    if (dbCaller && (dbCaller.role !== "super_admin" || dbCaller.is_active === false)) {
+    const claims = req.session;
+    if (!claims || claims.role !== "super_admin") {
       res.status(403).json({
         ok: false,
-        error: "Access denied. Active super_admin role required."
+        error: "Access denied. Only super_admin users can view workspace access logs."
       });
       return;
     }
-  } catch {
-  }
-  const { data, error } = await supabaseAdmin2.from("user_access_logs").select("id, user_id, user_email, user_name, user_role, login_at, logout_at, logout_reason, ip_address, user_agent").order("login_at", { ascending: false }).limit(500);
-  if (error) {
+    const sbAdmin = getSupabaseAdmin();
+    if (!sbAdmin) {
+      res.status(503).json({
+        ok: false,
+        error: "SUPABASE_SERVICE_ROLE_KEY is not configured on the server."
+      });
+      return;
+    }
+    try {
+      const callerRes = await Promise.race([
+        sbAdmin.from("crm_users").select("role, is_active").eq("email", claims.email.toLowerCase()).maybeSingle(),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2e3))
+      ]);
+      if (callerRes && callerRes.data && (callerRes.data.role !== "super_admin" || callerRes.data.is_active === false)) {
+        res.status(403).json({
+          ok: false,
+          error: "Access denied. Active super_admin role required."
+        });
+        return;
+      }
+    } catch {
+    }
+    const queryResult = await Promise.race([
+      sbAdmin.from("user_access_logs").select(
+        "id, user_id, user_email, user_name, user_role, login_at, logout_at, logout_reason, ip_address, user_agent"
+      ).order("login_at", { ascending: false }).limit(500),
+      new Promise(
+        (resolve) => setTimeout(
+          () => resolve({
+            data: null,
+            error: {
+              message: "Supabase query timed out after 4.5s. Verify SUPABASE_URL in Vercel Environment Variables.",
+              code: "TIMEOUT"
+            }
+          }),
+          4500
+        )
+      )
+    ]);
+    const { data, error } = queryResult;
+    if (error) {
+      const msg = String(error.message || "");
+      const code = String(error.code || "");
+      const isMissingTable = code === "42P01" || code === "PGRST205" || /user_access_logs.*does not exist|schema cache|Could not find the table/i.test(msg);
+      if (isMissingTable) {
+        res.status(200).json({
+          ok: true,
+          logs: [],
+          tableMissing: true,
+          warning: "Table public.user_access_logs has not been created in Supabase yet."
+        });
+        return;
+      }
+      res.status(500).json({
+        ok: false,
+        error: msg || "Failed to load user_access_logs from Supabase."
+      });
+      return;
+    }
+    res.status(200).json({ ok: true, logs: data || [] });
+  } catch (err) {
     res.status(500).json({
       ok: false,
-      error: error.message || "Failed to load user_access_logs from Supabase."
+      error: err instanceof Error ? err.message : "Unexpected server error loading access logs."
     });
-    return;
   }
-  res.json({ ok: true, logs: data || [] });
 });
 app.post("/api/auth/session", async (req, res) => {
   const body = req.body || {};
@@ -2522,30 +2589,7 @@ app.post("/api/auth/session", async (req, res) => {
     exp: Date.now() + 1e3 * 60 * 60 * 12
   };
   const token = signSessionToken(claims);
-  let accessLogId = null;
-  if (supabaseAdmin) {
-    accessLogId = `alog_${crypto2.randomUUID().slice(0, 12)}`;
-    const forwarded = req.headers["x-forwarded-for"];
-    const ipAddress = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0].trim() : req.socket?.remoteAddress || null;
-    const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 300) : null;
-    try {
-      await Promise.race([
-        supabaseAdmin.from("user_access_logs").insert({
-          id: accessLogId,
-          user_id: userPayload.id,
-          user_email: userPayload.email,
-          user_name: userPayload.full_name,
-          user_role: userPayload.role,
-          login_at: (/* @__PURE__ */ new Date()).toISOString(),
-          ip_address: ipAddress,
-          user_agent: userAgent
-        }),
-        new Promise((r) => setTimeout(r, 1500))
-      ]);
-    } catch {
-    }
-  }
-  res.json({ ok: true, token, accessLogId, claims });
+  res.json({ ok: true, token, claims });
 });
 app.post("/api/send-batch", requireAuth, async (req, res) => {
   const dbSender = req.session?.email ? await fetchCrmUserByEmail(req.session.email) : null;
@@ -2698,17 +2742,17 @@ app.post("/api/send-batch", requireAuth, async (req, res) => {
   }
   const resendKey = process.env.RESEND_API_KEY || "";
   const hasLiveResend = Boolean(resendKey && resendKey !== "MY_RESEND_API_KEY");
-  const supabaseAdmin2 = getServiceSupabaseClient();
+  const supabaseAdmin = getServiceSupabaseClient();
   const verifiedLiveExternalIds = /* @__PURE__ */ new Set();
   const blockedReasons = /* @__PURE__ */ new Map();
   if (!isTestMode) {
     const externalRecipients = resolvedRecipients.filter(
       (r) => !isFortifaiInternalEmail(r.email)
     );
-    if (supabaseAdmin2) {
+    if (supabaseAdmin) {
       try {
         const allIds = resolvedRecipients.map((r) => r.id).filter(Boolean);
-        const { data: contactRows, error: contactsQueryErr } = allIds.length > 0 ? await supabaseAdmin2.from("contacts").select("id, email, contact_type, is_demo").in("id", allIds) : { data: [], error: null };
+        const { data: contactRows, error: contactsQueryErr } = allIds.length > 0 ? await supabaseAdmin.from("contacts").select("id, email, contact_type, is_demo").in("id", allIds) : { data: [], error: null };
         if (contactsQueryErr) {
           for (const ext of externalRecipients) {
             blockedReasons.set(
@@ -2789,9 +2833,9 @@ app.post("/api/send-batch", requireAuth, async (req, res) => {
   }
   const campaignId = isTestMode ? null : `cmp_${crypto2.randomUUID().slice(0, 10)}`;
   const sentAtIso = (/* @__PURE__ */ new Date()).toISOString();
-  if (!isTestMode && supabaseAdmin2 && campaignId) {
+  if (!isTestMode && supabaseAdmin && campaignId) {
     try {
-      await supabaseAdmin2.from("campaigns").insert({
+      await supabaseAdmin.from("campaigns").insert({
         id: campaignId,
         audience_type: audienceType,
         subject: eligibleForDispatch[0]?.subject || "Fortifai Outreach",
@@ -2889,9 +2933,9 @@ ${ctaLabel}: ${trackedUrl}`;
       ...resendId ? { resend_id: resendId } : {},
       ...errorMsg ? { error: errorMsg } : {}
     });
-    if (!isTestMode && supabaseAdmin2 && campaignId) {
+    if (!isTestMode && supabaseAdmin && campaignId) {
       try {
-        await supabaseAdmin2.from("email_logs").insert({
+        await supabaseAdmin.from("email_logs").insert({
           id: `log_${crypto2.randomUUID().slice(0, 10)}`,
           contact_id: r.id,
           campaign_id: campaignId,
@@ -2902,7 +2946,7 @@ ${ctaLabel}: ${trackedUrl}`;
           sent_at: sentAtIso
         });
         if (status === "delivered") {
-          await supabaseAdmin2.from("contacts").update({ last_contacted_at: sentAtIso }).eq("id", r.id);
+          await supabaseAdmin.from("contacts").update({ last_contacted_at: sentAtIso }).eq("id", r.id);
         }
       } catch {
       }
@@ -2944,22 +2988,22 @@ app.post("/api/webhooks/resend", async (req, res) => {
   const eventTimeIso = typeof body.created_at === "string" && !Number.isNaN(Date.parse(body.created_at)) ? new Date(body.created_at).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
   const toField = body.data?.to;
   const recipientEmail = Array.isArray(toField) ? String(toField[0] || "").trim().toLowerCase() : typeof toField === "string" ? toField.trim().toLowerCase() : "";
-  const supabaseAdmin2 = getServiceSupabaseClient();
+  const supabaseAdmin = getServiceSupabaseClient();
   let botScanFiltered = false;
   let suppressedContact = false;
   let matchedContactId = null;
-  if (supabaseAdmin2) {
+  if (supabaseAdmin) {
     try {
       let logRow = null;
       if (resendEmailId) {
-        const { data } = await supabaseAdmin2.from("email_logs").select("*").eq("resend_email_id", resendEmailId).maybeSingle();
+        const { data } = await supabaseAdmin.from("email_logs").select("*").eq("resend_email_id", resendEmailId).maybeSingle();
         logRow = data || null;
       }
       if (!logRow && recipientEmail) {
-        const { data: contactRow } = await supabaseAdmin2.from("contacts").select("id").eq("email", recipientEmail).maybeSingle();
+        const { data: contactRow } = await supabaseAdmin.from("contacts").select("id").eq("email", recipientEmail).maybeSingle();
         if (contactRow?.id) {
           matchedContactId = String(contactRow.id);
-          const { data: latestLog } = await supabaseAdmin2.from("email_logs").select("*").eq("contact_id", matchedContactId).order("sent_at", { ascending: false }).limit(1).maybeSingle();
+          const { data: latestLog } = await supabaseAdmin.from("email_logs").select("*").eq("contact_id", matchedContactId).order("sent_at", { ascending: false }).limit(1).maybeSingle();
           logRow = latestLog || null;
         }
       } else if (logRow?.contact_id) {
@@ -2988,10 +3032,10 @@ app.post("/api/webhooks/resend", async (req, res) => {
         } else if (eventType === "email.complained") {
           patch.status = "complained";
         }
-        await supabaseAdmin2.from("email_logs").update(patch).eq("id", logRow.id);
+        await supabaseAdmin.from("email_logs").update(patch).eq("id", logRow.id);
       }
       if ((eventType === "email.bounced" || eventType === "email.complained") && matchedContactId) {
-        await supabaseAdmin2.from("contacts").update({ unsubscribed: true }).eq("id", matchedContactId);
+        await supabaseAdmin.from("contacts").update({ unsubscribed: true }).eq("id", matchedContactId);
         suppressedContact = true;
       }
     } catch {
@@ -3040,10 +3084,10 @@ app.post("/api/track-portal", async (req, res) => {
   const eventId = `evt_${crypto2.randomUUID().slice(0, 10)}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   let updatedStage = null;
-  const supabaseAdmin2 = getServiceSupabaseClient();
-  if (supabaseAdmin2) {
+  const supabaseAdmin = getServiceSupabaseClient();
+  if (supabaseAdmin) {
     try {
-      await supabaseAdmin2.from("portal_events").insert({
+      await supabaseAdmin.from("portal_events").insert({
         id: eventId,
         contact_id: contactId,
         portal,
@@ -3051,7 +3095,7 @@ app.post("/api/track-portal", async (req, res) => {
         metadata,
         created_at: nowIso
       });
-      const { data: opp } = await supabaseAdmin2.from("opportunities").select("id, stage, opportunity_type").eq("contact_id", contactId).maybeSingle();
+      const { data: opp } = await supabaseAdmin.from("opportunities").select("id, stage, opportunity_type").eq("contact_id", contactId).maybeSingle();
       if (opp) {
         const currStage = String(opp.stage || "");
         const isInvestor = portal === "investor.fortifai.io" || opp.opportunity_type === "seed_investment";
@@ -3060,7 +3104,7 @@ app.post("/api/track-portal", async (req, res) => {
             updatedStage = "SAFE Signed";
           } else if (eventType === "pass_submitted") {
             updatedStage = "Passed";
-            await supabaseAdmin2.from("contacts").update({ unsubscribed: true }).eq("id", contactId);
+            await supabaseAdmin.from("contacts").update({ unsubscribed: true }).eq("id", contactId);
           } else if (["Not sent", "Scheduled", "Sent", "Reminder Sched", "Reminder Sent"].includes(currStage)) {
             updatedStage = "Portal Visited";
           }
@@ -3068,7 +3112,7 @@ app.post("/api/track-portal", async (req, res) => {
           updatedStage = "2 Qualified";
         }
         if (updatedStage && updatedStage !== currStage) {
-          await supabaseAdmin2.from("opportunities").update({
+          await supabaseAdmin.from("opportunities").update({
             stage: updatedStage,
             updated_at: nowIso,
             ...updatedStage === "SAFE Signed" ? { outcome: "Committed" } : {},
@@ -3098,13 +3142,13 @@ app.get("/api/unsubscribe", async (req, res) => {
     );
     return;
   }
-  const supabaseAdmin2 = getServiceSupabaseClient();
-  if (supabaseAdmin2) {
+  const supabaseAdmin = getServiceSupabaseClient();
+  if (supabaseAdmin) {
     try {
       if (contactId) {
-        await supabaseAdmin2.from("contacts").update({ unsubscribed: true }).eq("id", contactId);
+        await supabaseAdmin.from("contacts").update({ unsubscribed: true }).eq("id", contactId);
       } else if (email) {
-        await supabaseAdmin2.from("contacts").update({ unsubscribed: true }).eq("email", email);
+        await supabaseAdmin.from("contacts").update({ unsubscribed: true }).eq("email", email);
       }
     } catch {
     }
@@ -3152,10 +3196,10 @@ app.post(
       return;
     }
     const receivedAt = typeof body.receivedAt === "string" && body.receivedAt.trim() ? body.receivedAt.trim() : (/* @__PURE__ */ new Date()).toISOString();
-    const supabaseAdmin2 = getServiceSupabaseClient();
-    if (supabaseAdmin2 && contactId) {
+    const supabaseAdmin = getServiceSupabaseClient();
+    if (supabaseAdmin && contactId) {
       try {
-        await supabaseAdmin2.from("email_logs").update({
+        await supabaseAdmin.from("email_logs").update({
           status: "replied",
           replied_at: receivedAt,
           reply_snippet: snippet || subject
