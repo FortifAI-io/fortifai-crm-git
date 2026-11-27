@@ -478,3 +478,11 @@ html:not(.dark) {
   --tx-primary: #0F172A;
   --tx-muted: #64748B;
 }
+
+/* Dark Mode Recharts Legend, Bars & Empty-State Contrast */
+html.dark .recharts-legend-item-text {
+  color: #CBD5E1 !important;
+}
+html.dark .recharts-cartesian-axis-tick-value tspan {
+  fill: #94A3B8 !important;
+}

@@ -728,15 +728,12 @@ export function PipelineHealthView({
                   isOver ? "bg-sky-500/10" : "bg-transparent"
                 }`}
               >
-                <div className="flex items-center justify-between pb-1.5 border-b border-[var(--border-subtle)]">
-                  <div>
-                    <div className="text-[12px] font-semibold text-[var(--tx-primary)]">{q}</div>
-                    <div className="text-[10.5px] font-mono text-[var(--tx-muted)]">
-                      {formatMillions(qTotalArr)} · {formatMillions(qWeightedArr)} wtd
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[var(--border-subtle)] whitespace-nowrap">
+                  <span className="text-[12px] font-semibold text-[var(--tx-primary)]">
+                    {q} <span className="font-mono font-normal text-[11px] text-[var(--tx-muted)]">· {formatMillions(qTotalArr)}</span>
+                  </span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-muted)]">
-                    {qDeals.length} {qDeals.length === 1 ? "deal" : "deals"}
+                    {qDeals.length}
                   </span>
                 </div>
 
@@ -837,8 +834,8 @@ export function PipelineHealthView({
                     color: "#F8FAFC",
                   }}
                 />
-                <Legend wrapperStyle={{ fontSize: "11px" }} />
-                <Bar dataKey="RequiredM" name="Required Coverage ($M)" fill="#334155" radius={[3, 3, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: "11.5px", color: "#CBD5E1" }} formatter={(val) => <span style={{ color: "#CBD5E1" }}>{val}</span>} />
+                <Bar dataKey="RequiredM" name="Required Coverage ($M)" fill="#64748B" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="ActiveM" name="Scheduled Pipeline ($M)" fill="#38BDF8" radius={[3, 3, 0, 0]} />
                 <Bar dataKey="WeightedM" name="Weighted ARR ($M)" fill="#10B981" radius={[3, 3, 0, 0]} />
               </BarChart>
@@ -864,7 +861,12 @@ export function PipelineHealthView({
             </div>
 
             <div className="divide-y divide-[var(--border-subtle)] border border-[var(--border-subtle)] rounded-md overflow-hidden">
-              {engine.staleDeals.slice(0, 4).map((deal) => (
+              {engine.staleDeals.length === 0 ? (
+                <div className="px-3 py-3 text-[12px] text-emerald-400 bg-emerald-500/10 flex items-center justify-between">
+                  <span>All active deals are within the {rules.staleSlaDays}-day SLA window.</span>
+                  <span className="font-mono text-[11px]">0 stalled</span>
+                </div>
+              ) : engine.staleDeals.slice(0, 4).map((deal) => (
                 <div
                   key={deal.id}
                   className="px-3 py-2 flex items-center justify-between gap-2 hover:bg-[var(--bg-hover)] text-[12px]"
@@ -909,7 +911,7 @@ export function PipelineHealthView({
               {engine.whitespaceTargets.map((wt) => (
                 <div
                   key={wt.id}
-                  className="px-2.5 py-1.5 rounded border border-[var(--border-subtle)] bg-[var(--bg-canvas)] flex items-center justify-between text-[11.5px]"
+                  className="px-2.5 py-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] hover:border-sky-400/40 flex items-center justify-between gap-2 text-[11.5px] transition-colors"
                 >
                   <span className="font-medium text-[var(--tx-primary)] truncate">{wt.organization}</span>
                   <span className="font-mono text-[10.5px] text-emerald-400 shrink-0">
