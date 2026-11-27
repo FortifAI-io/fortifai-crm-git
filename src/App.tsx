@@ -82,6 +82,7 @@ import { ComposerView } from './components/views/ComposerView';
 import { TelemetryView } from './components/views/TelemetryView';
 import { AdminRbacView } from './components/views/AdminRbacView';
 import { AccessLogView } from './components/views/AccessLogView';
+import { BenchmarksSettingsView } from './components/views/BenchmarksSettingsView';
 import { SettingsView } from './components/views/SettingsView';
 import { ContactDrawer } from './components/ContactDrawer';
 import { AskMeDrawer } from './components/AskMeDrawer';
@@ -184,6 +185,7 @@ const VALID_TABS = new Set<ActiveTab>([
   'admin',
   'settings',
   'access_log',
+  'benchmarks',
 ]);
 
 function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): boolean {
@@ -196,7 +198,7 @@ function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): 
   if (CUSTOMER_TABS.has(tab)) return perms.can_view_customers;
   if (INVESTOR_TABS.has(tab)) return perms.can_view_investors;
   if (tab === 'admin') return perms.can_manage_users;
-  if (tab === 'settings' || tab === 'access_log') return role === 'super_admin';
+  if (tab === 'settings' || tab === 'access_log' || tab === 'benchmarks') return role === 'super_admin';
   return false;
 }
 
@@ -3228,14 +3230,14 @@ function ScaleWorkspace({
                   className={`w-full flex items-center ${
                     sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                   } rounded-[6px] text-left transition-colors ${
-                    (activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') || activeTab === "settings"
+                    (activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks' || activeTab === 'access_log') || activeTab === "settings"
                       ? "bg-[#1B2B44] text-white font-medium"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
                   <Settings
                     size={16}
-                    className={(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
+                    className={(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks' || activeTab === 'access_log') || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
                   />
                   {!sidebarCollapsed && (
                     <span className="text-[12.5px] truncate">
@@ -3415,7 +3417,22 @@ function ScaleWorkspace({
                   section="Header & Sidebar"
                 />
               )}
-              {activeTab === 'access_log' && currentUser.role === 'super_admin' && (
+              {activeTab === 'benchmarks' && currentUser.role === 'super_admin' && (
+            <CmsText
+              id="header.title.benchmarks"
+              defaultValue="Settings · Revenue Targets & Pipeline Governance Benchmarks"
+              section="Header & Sidebar"
+            />
+          )}
+          {activeTab === 'benchmarks' && currentUser.role === 'super_admin' && (
+          <BenchmarksSettingsView
+            currentUser={currentUser}
+            pipelineRules={pipelineRules}
+            onUpdatePipelineRules={handleUpdatePipelineRules}
+          />
+        )}
+
+        {activeTab === 'access_log' && currentUser.role === 'super_admin' && (
             <CmsText
               id="header.title.access_log"
               defaultValue="Settings · User Access & Session Audit Log"
@@ -3539,7 +3556,7 @@ function ScaleWorkspace({
         )}
 
         
-        {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') && (
+        {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks' || activeTab === 'access_log') && (
           <div
             data-admin-subtabs="true"
             className="px-6 pt-4 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-2 shrink-0"
@@ -3615,7 +3632,7 @@ function ScaleWorkspace({
           <PipelineHealthView
               contacts={contacts}
               rules={pipelineRules}
-              onOpenSettingsRules={() => navigateToTab("settings")}
+              onOpenSettingsRules={() => navigateToTab('benchmarks')}
               onUpdateContact={updateContact}
               onSelectContact={(id) => setSelectedContactId(id)}
             pipelineAnalytics={pipelineAnalytics}

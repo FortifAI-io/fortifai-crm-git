@@ -405,13 +405,13 @@ export function PipelineHealthView({
               <button
                 type="button"
                 onClick={onOpenSettingsRules}
-                aria-label="Configure Benchmarks & Formulas"
+                aria-label="Benchmarks & Target Settings"
                 className="h-8 w-8 inline-flex items-center justify-center rounded-lg bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-sky-400 hover:border-sky-400/60 hover:bg-sky-500/10 transition-colors cursor-pointer"
               >
                 <Sliders size={14} />
               </button>
               <div className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute right-0 top-full mt-1.5 z-50 px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-lg text-[11px] font-medium text-[var(--tx-primary)] whitespace-nowrap">
-                Configure Benchmarks &amp; Formulas
+                Benchmarks &amp; Target Settings
               </div>
             </div>
           )}
@@ -524,7 +524,7 @@ export function PipelineHealthView({
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
           >
             <Sliders size={12} className="text-sky-400" />
-            Configure Benchmarks &amp; Formulas
+            Benchmarks &amp; Target Settings
           </button>
         </div>
       )}
