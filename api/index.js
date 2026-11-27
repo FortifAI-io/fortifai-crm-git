@@ -1656,6 +1656,9 @@ var FALLBACK_CRM_USERS = {
   "chandra@fortifai.io": { id: "usr_chandra", email: "chandra@fortifai.io", full_name: "Chandra Yeleshwarapu", role: "sales_lead", is_active: true },
   "contact@fortifai.io": { id: "usr_marketing", email: "contact@fortifai.io", full_name: "Fortifai Marketing", role: "marketing", is_active: true }
 };
+function getSupabaseAdmin() {
+  return typeof isServiceSupabaseConfigured === "function" ? isServiceSupabaseConfigured() : isServiceSupabaseConfigured;
+}
 var app = express();
 app.use((req, _res, next) => {
   if (req.url && !req.url.startsWith("/api")) {

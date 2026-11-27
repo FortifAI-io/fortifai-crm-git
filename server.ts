@@ -279,6 +279,8 @@ const FALLBACK_CRM_USERS: Record<string, { id: string; email: string; full_name:
   "contact@fortifai.io": { id: "usr_marketing", email: "contact@fortifai.io", full_name: "Fortifai Marketing", role: "marketing", is_active: true },
 };
 
+function getSupabaseAdmin() { return typeof isServiceSupabaseConfigured === "function" ? isServiceSupabaseConfigured() : isServiceSupabaseConfigured; }
+
 async function startServer() {
   const app = express();
   app.use(
