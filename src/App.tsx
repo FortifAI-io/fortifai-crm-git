@@ -622,6 +622,18 @@ function ScaleWorkspace({
 
   // Persist local CRM state
   useEffect(() => {
+    try {
+      if (!window.localStorage.getItem('fortifai_scale_purged_mock_users_v2')) {
+        window.localStorage.setItem('fortifai_scale_purged_mock_users_v2', '1');
+        setCrmUsers((prev) => {
+          const cleaned = prev.filter((u) => u.email.toLowerCase() === 'varun@fortifai.io');
+          return cleaned.length > 0 ? cleaned : INITIAL_CRM_USERS;
+        });
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     saveLocalState('USERS', crmUsers);
   }, [crmUsers]);
 
