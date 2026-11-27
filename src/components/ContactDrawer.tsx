@@ -21,10 +21,19 @@ import type {
 interface ContactDrawerProps {
   contact: Contact | null;
   allContacts?: Contact[];
+  currentUser?: CrmUser;
   activeUsers: CrmUser[];
   customFields: CustomFieldDefinition[];
+  telemetry?: unknown[];
   canEdit: boolean;
   canSendCampaigns: boolean;
+  composerAudience?: string;
+  composerSubject?: string;
+  composerBody?: string;
+  composerSendFrom?: string;
+  useAssignedOwnerSender?: boolean;
+  bccEnabled?: boolean;
+  renderTemplate?: (tpl: string, c: Contact) => string;
   onClose: () => void;
   onUpdateContact: (id: string, patch: Partial<Contact>) => void;
   onUpdateCustomFieldValue: (
@@ -36,6 +45,7 @@ interface ContactDrawerProps {
   onSelectContact?: (id: string) => void;
   onCreateAccountContact?: (newContact: Omit<Contact, 'id'>) => void;
   onComposeEmail: (contact: Contact, subject?: string, body?: string) => void;
+  onLogInboundReply?: (contactId: string, snippet?: string) => void;
   onOpenAccountIntelligence?: (contact: Contact) => void;
 }
 
@@ -147,6 +157,7 @@ export function ContactDrawer({
     flashSaved(feedbackLabel);
   };
 
+  // Account-level changes propagate across all contacts tagged to this Account and save to Supabase
   const commitAccountPatch = (
     patch: Partial<Contact>,
     customFieldPatch?: Record<string, string | number | boolean>
@@ -258,7 +269,7 @@ export function ContactDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-[1px]">
       <div className="w-full max-w-[660px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] shadow-2xl flex flex-col text-[var(--tx-primary)]">
-        {/* Salesforce-Grade Account & Contact Header */}
+        {/* Salesforce-Grade Account & Contact Record Banner */}
         <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)]/80 flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
@@ -309,7 +320,7 @@ export function ContactDrawer({
           </button>
         </div>
 
-        {/* Scrollable Form Body */}
+        {/* Scrollable Record Form Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
           {/* SECTION 1: ACCOUNT PROFILE & CLASSIFICATION */}
           <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
@@ -319,8 +330,8 @@ export function ContactDrawer({
                 Account Profile &amp; Classification
               </div>
               <span className="text-[10.5px] text-[var(--tx-muted)]">
-                Syncs across {accountContacts.length}{' '}
-                {accountContacts.length === 1 ? 'contact' : 'contacts'}
+                Updates all {accountContacts.length}{' '}
+                {accountContacts.length === 1 ? 'contact' : 'contacts'} on account
               </span>
             </div>
 

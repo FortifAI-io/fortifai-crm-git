@@ -3377,7 +3377,7 @@ function ScaleWorkspace({
       <main className="flex-1 min-w-0 overflow-x-hidden min-w-0 flex flex-col">
         {/* Top Header Bar */}
         <header className="h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-20">
-          <div ref={mainScrollRef} className="min-w-0 overflow-x-hidden flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-[13.5px] font-semibold text-white tracking-tight truncate">
               {activeTab === 'customer_analytics' && (
                 <CmsText
@@ -3464,12 +3464,12 @@ function ScaleWorkspace({
             />
           )}
           {activeTab === 'benchmarks' && currentUser.role === 'super_admin' && (
-          <BenchmarksSettingsView
-            currentUser={currentUser}
-            pipelineRules={pipelineRules}
-            onUpdatePipelineRules={handleUpdatePipelineRules}
-          />
-        )}
+                <CmsText
+                  id="header.title.benchmarks"
+                  defaultValue="Settings · Revenue Targets & Pipeline Governance Benchmarks"
+                  section="Header & Sidebar"
+                />
+              )}
 
         {activeTab === 'access_log' && currentUser.role === 'super_admin' && (
             <CmsText
@@ -3881,6 +3881,14 @@ function ScaleWorkspace({
             onSimulateWebhook={handleSimulateWebhook}
             onLogInboundReply={handleLogInboundReply}
             onSelectContact={setSelectedContactId}
+          />
+        )}
+
+        {activeTab === 'benchmarks' && currentUser.role === 'super_admin' && (
+          <BenchmarksSettingsView
+            currentUser={currentUser}
+            pipelineRules={pipelineRules}
+            onUpdatePipelineRules={handleUpdatePipelineRules}
           />
         )}
 
