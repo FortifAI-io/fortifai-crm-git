@@ -410,3 +410,30 @@ html.dark [class*="bg-rose-100"] {
   border-color: rgba(244, 63, 94, 0.38) !important;
   color: #FFE4E6 !important;
 }
+
+/* Single-Line Table Cells Globally (KPI cards excluded) */
+table th,
+table td {
+  white-space: nowrap !important;
+  vertical-align: middle !important;
+  height: 36px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+/* Collapse secondary stacked subtext lines inside table cells into clean single-line cells */
+table td > div + div,
+table td > span + div,
+table td > div > div + div {
+  display: none !important;
+}
+
+table td > div {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  max-width: 240px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}

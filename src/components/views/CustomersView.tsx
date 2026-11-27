@@ -765,7 +765,7 @@ export function CustomersView({
               <tr className="bg-slate-50/80 border-b border-[#E2E8F0] text-[11px] font-semibold tracking-wider text-slate-500">
                 <ColumnFilterHeader
                   columnKey="account"
-                  label="Account & Tier"
+                  label="Account"
                   thClassName={`${densityCls.headerCell} sticky left-0 z-20 bg-slate-50 min-w-[200px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
@@ -785,7 +785,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="contact"
-                  label="Executive & Job Title"
+                  label="Executive"
                   thClassName={`${densityCls.headerCell} sticky left-[200px] z-20 bg-slate-50 min-w-[230px] border-r border-[#E2E8F0]`}
                   mode="categorical"
                   sortState={sortState}
@@ -827,7 +827,7 @@ export function CustomersView({
                 />
                 <ColumnFilterHeader
                   columnKey="persona"
-                  label="Buyer Persona & ICP Tag"
+                  label="ICP Tag"
                   thClassName={`${densityCls.headerCell} whitespace-nowrap`}
                   mode="categorical"
                   sortState={sortState}
