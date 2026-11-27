@@ -3166,14 +3166,14 @@ function ScaleWorkspace({
                   className={`w-full flex items-center ${
                     sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                   } rounded-[6px] text-left transition-colors ${
-                    activeTab === "admin" || activeTab === "settings"
+                    (activeTab === 'settings' || activeTab === 'admin') || activeTab === "settings"
                       ? "bg-[#1B2B44] text-white font-medium"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
                   <Settings
                     size={16}
-                    className={activeTab === "admin" || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
+                    className={(activeTab === 'settings' || activeTab === 'admin') || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
                   />
                   {!sidebarCollapsed && (
                     <span className="text-[12.5px] truncate">
@@ -3349,14 +3349,14 @@ function ScaleWorkspace({
               {activeTab === 'admin' && (
                 <CmsText
                   id="header.title.admin"
-                  defaultValue="Admin & RBAC (crm_users)"
+                  defaultValue="Admin · Users, Invitations & RBAC"
                   section="Header & Sidebar"
                 />
               )}
               {activeTab === 'settings' && currentUser.role === 'super_admin' && (
                 <CmsText
                   id="header.title.settings"
-                  defaultValue="Supabase, Resend & Portal Integration"
+                  defaultValue="Admin · Connections, Pipeline Rules & 2-Way Sync"
                   section="Header & Sidebar"
                 />
               )}
@@ -3466,6 +3466,45 @@ function ScaleWorkspace({
           <div className="fixed bottom-5 right-5 z-50 bg-[#0D1520] text-white text-xs px-4 py-3 rounded-lg shadow-lg border border-slate-700 flex items-center gap-2.5">
             <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
             <span>{toastMessage}</span>
+          </div>
+        )}
+
+        
+        {(activeTab === 'settings' || activeTab === 'admin') && (
+          <div
+            data-admin-subtabs="true"
+            className="px-6 pt-4 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-2 shrink-0"
+          >
+            {(currentUser.role === 'super_admin' ||
+              authenticatedUser.email.toLowerCase() === 'varun@fortifai.io') && (
+              <button
+                type="button"
+                onClick={() => navigateToTab('settings')}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'settings'
+                    ? 'border-sky-400 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
+                }`}
+              >
+                <Settings size={14} />
+                <span>Connections, Pipeline Rules &amp; 2-Way Sync</span>
+              </button>
+            )}
+
+            {perms.can_manage_users && (
+              <button
+                type="button"
+                onClick={() => navigateToTab('admin')}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'admin'
+                    ? 'border-sky-400 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
+                }`}
+              >
+                <Shield size={14} />
+                <span>Users, Invitations &amp; RBAC</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -3713,7 +3752,7 @@ function ScaleWorkspace({
           />
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === 'settings' && (currentUser.role === 'super_admin' || authenticatedUser.email.toLowerCase() === 'varun@fortifai.io') && (
           <SettingsView
             pipelineRules={pipelineRules}
             onUpdatePipelineRules={handleUpdatePipelineRules}
