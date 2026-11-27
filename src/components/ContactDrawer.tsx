@@ -1,736 +1,917 @@
-import { useMemo, useState } from 'react';
-import { ExternalLink, Eye, Mail, MessageSquareReply, Send, Sparkles, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  Building2,
+  CheckCircle2,
+  ExternalLink,
+  Mail,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react';
 import type {
   Contact,
-  ContactType,
   CrmUser,
   CustomFieldDefinition,
-  Quarter,
   Region,
-  TelemetryEvent,
 } from '../types/crm';
-import { CUSTOMER_STAGES, INVESTOR_STAGES, QUARTERS, REGIONS } from '../data/seedData';
-import { getRegionBadgeStyle } from '../utils/crmHelpers';
-import { CustomFieldCell } from './CustomFieldCell';
-import { DeliveryStatusBadge } from './DeliveryStatusBadge';
 
 interface ContactDrawerProps {
-  contact: Contact;
-  currentUser: CrmUser;
+  contact: Contact | null;
+  allContacts?: Contact[];
   activeUsers: CrmUser[];
   customFields: CustomFieldDefinition[];
-  telemetry: TelemetryEvent[];
   canEdit: boolean;
   canSendCampaigns: boolean;
-  composerAudience: ContactType;
-  composerSubject: string;
-  composerBody: string;
-  composerSendFrom: string;
-  useAssignedOwnerSender: boolean;
-  bccEnabled: boolean;
-  renderTemplate: (tpl: string, contact?: Contact) => string;
   onClose: () => void;
   onUpdateContact: (id: string, patch: Partial<Contact>) => void;
-  onDeleteContact?: (id: string) => void;
   onUpdateCustomFieldValue: (
     contactId: string,
     fieldKey: string,
     value: string | number | boolean
   ) => void;
+  onDeleteContact?: (id: string) => void;
+  onSelectContact?: (id: string) => void;
+  onCreateAccountContact?: (newContact: Omit<Contact, 'id'>) => void;
   onComposeEmail: (contact: Contact, subject?: string, body?: string) => void;
-  onLogInboundReply?: (
-    contact: Contact,
-    payload: { subject: string; snippet: string }
-  ) => Promise<void>;
   onOpenAccountIntelligence?: (contact: Contact) => void;
 }
 
-function formatUserSender(user: CrmUser): string {
-  const displayName = user.sender_display_name?.trim() || user.full_name;
-  return `${displayName} <${user.email}>`;
-}
+const CUSTOMER_STAGES = [
+  '1 Lead',
+  '2 Qualified',
+  '3 Demo / Discovery',
+  '4 Decisionmaker buy in',
+  '5 Internal Review Pending',
+  '6 Commercial / Contracting',
+  '7 Closed Won',
+  '8 Closed Lost',
+  '9 No response',
+];
+
+const INVESTOR_STAGES = [
+  'Outreach',
+  'Deck Viewed',
+  'Meeting Scheduled',
+  'Diligence',
+  'Soft Circle',
+  'SAFE Signed',
+  'Wired',
+  'Passed',
+];
+
+const REGIONS: Region[] = ['US', 'India', 'UAE', 'Singapore', 'UK/Europe', 'Other'];
+const PERSONAS = ['CCO/GC', 'CAE', 'CFO', 'CPO', 'CISO / Risk', 'Other'];
+const TIERS = ['Tier I', 'Tier II', 'Tier III'];
+const FIT_CATEGORIES = ['Best-fit', 'Adjacent', 'Other'];
+const CLOSE_QUARTERS = ['', 'Q1 2027', 'Q2 2027', 'Q3 2027', 'Q4 2027'];
+const PRODUCTS = [
+  'Fortifai',
+  'Veritas',
+  'D7',
+  'Surge',
+  'Aegis',
+  'Crystal',
+  'Kuber',
+  'Sara',
+];
 
 export function ContactDrawer({
   contact,
-  currentUser,
+  allContacts = [],
   activeUsers,
   customFields,
-  telemetry,
   canEdit,
   canSendCampaigns,
-  composerAudience,
-  composerSubject,
-  composerBody,
-  composerSendFrom,
-  useAssignedOwnerSender,
-  bccEnabled,
-  renderTemplate,
   onClose,
   onUpdateContact,
-  onDeleteContact,
   onUpdateCustomFieldValue,
+  onDeleteContact,
+  onSelectContact,
+  onCreateAccountContact,
   onComposeEmail,
-  onLogInboundReply,
   onOpenAccountIntelligence,
 }: ContactDrawerProps) {
-  const [replyFormOpen, setReplyFormOpen] = useState(false);
-  const [replySubject, setReplySubject] = useState(
-    contact.contact_type === 'investor'
-      ? `Re: Fortifai ($3M Seed) — ${contact.organization}`
-      : `Re: Fortifai Continuous Assurance — ${contact.organization}`
-  );
-  const [replySnippet, setReplySnippet] = useState('');
-  const [savingReply, setSavingReply] = useState(false);
-  const [quickNoteDraft, setQuickNoteDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [showAddMember, setShowAddMember] = useState(false);
 
-  const templatePresets = useMemo(() => {
-    const signOffName = currentUser.sender_display_name?.trim() || currentUser.full_name;
-    const isInvestor = contact.contact_type === 'investor';
+  // New Contact tagged to this Account form state
+  const [newFirstName, setNewFirstName] = useState('');
+  const [newLastName, setNewLastName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [newPersona, setNewPersona] = useState('CFO');
+  const [newStage, setNewStage] = useState('1 Lead');
 
-    const defaultSubject = isInvestor
-      ? 'Fortifai — Autonomous Audit & Compliance for Fortune 500 ($3M Seed)'
-      : 'Continuous Audit & Counterpart Risk Automation — Fortifai';
-    const defaultBody = isInvestor
-      ? `Hi {{first_name}},\n\n{{custom_hook}}\n\nWe are raising a $3M Seed ($15M cap post-money SAFE) with enterprise traction across Honeywell, Nokia, and Brookfield Properties.\n\nYou can review our 25-slide deck and 2027–2031 financial model directly in our investor portal:\nhttps://investor.fortifai.io/?ref={{contact_id}}\n\nWould you be open to a 20-minute conversation next week?\n\nBest,\n${signOffName}\nFortifai`
-      : `Hi {{first_name}},\n\nFollowing up on how {{organization}} approaches continuous controls testing and third-party compliance across {{region}}.\n\nFortifai deploys autonomous AI assurance agents directly over SAP, Oracle, and Workday to test 100% of transactions rather than manual quarterly samples.\n\nYou can explore an interactive briefing tailored for {{title}} leaders here:\nhttps://overview.fortifai.io/?ref={{contact_id}}\n\nOpen to a brief 15-minute walkthrough next Tuesday or Thursday?\n\nBest,\n${signOffName}\nFortifai`;
+  useEffect(() => {
+    setShowAddMember(false);
+    setNewFirstName('');
+    setNewLastName('');
+    setNewEmail('');
+    setNewTitle('');
+    setNewPersona('CFO');
+    setNewStage('1 Lead');
+  }, [contact?.id]);
 
-    const followUpSubject = isInvestor
-      ? `Quick follow-up: {{organization}} & Fortifai ($3M Seed)`
-      : `Quick follow-up for {{organization}} — Autonomous Audit Briefing`;
-    const followUpBody = isInvestor
-      ? `Hi {{first_name}},\n\nSharing a quick note ahead of our $3M Seed close. Since our last email, we have progressed commercial reviews across Tier I Fortune 500 accounts.\n\nDirect portal link for {{organization}}:\nhttps://investor.fortifai.io/?ref={{contact_id}}\n\nHappy to send over our data room checklist if helpful.\n\nBest,\n${signOffName}`
-      : `Hi {{first_name}},\n\nChecking back in on continuous controls monitoring for {{organization}} in {{region}}.\n\nOur briefing room remains live for your team:\nhttps://overview.fortifai.io/?ref={{contact_id}}\n\nLet me know if next week works for a 15-minute technical walkthrough.\n\nBest,\n${signOffName}`;
+  const flashSaved = (label = 'Saved to DB') => {
+    setSaveFeedback(label);
+    window.setTimeout(() => {
+      setSaveFeedback((prev) => (prev === label ? null : prev));
+    }, 1800);
+  };
 
-    const presets: { id: string; label: string; subject: string; body: string }[] = [];
-    if (composerAudience === contact.contact_type) {
-      presets.push({
-        id: 'composer',
-        label: 'Active Composer Template',
-        subject: composerSubject,
-        body: composerBody,
+  // All contacts sharing the same Account (organization)
+  const accountContacts = useMemo(() => {
+    if (!contact) return [];
+    const orgKey = String(contact.organization || '').trim().toLowerCase();
+    if (!orgKey) return [contact];
+    const peers = allContacts.filter(
+      (c) =>
+        c.contact_type === contact.contact_type &&
+        String(c.organization || '').trim().toLowerCase() === orgKey
+    );
+    return peers.length > 0 ? peers : [contact];
+  }, [contact, allContacts]);
+
+  if (!contact) return null;
+
+  const isCustomer = contact.contact_type === 'customer';
+  const stageOptions = isCustomer ? CUSTOMER_STAGES : INVESTOR_STAGES;
+  const usListedVal = String(contact.custom_fields?.us_listed || 'No');
+  const fitCategoryVal = String(contact.custom_fields?.fit_category || 'Best-fit');
+
+  const commitPatch = (patch: Partial<Contact>, feedbackLabel = 'Synced to DB') => {
+    if (!canEdit) return;
+    onUpdateContact(contact.id, patch);
+    flashSaved(feedbackLabel);
+  };
+
+  // Propagate Account-level attributes (Industry, Tier, Fortune 500, US Listed, Fit Category, Region)
+  // to the current contact AND any sibling contacts under the same Account so the Account record stays unified
+  const commitAccountPatch = (
+    patch: Partial<Contact>,
+    customFieldPatch?: Record<string, string | number | boolean>
+  ) => {
+    if (!canEdit) return;
+    const mergedCustom = customFieldPatch
+      ? { ...(contact.custom_fields || {}), ...customFieldPatch }
+      : contact.custom_fields;
+
+    onUpdateContact(contact.id, {
+      ...patch,
+      ...(customFieldPatch ? { custom_fields: mergedCustom } : {}),
+    });
+
+    for (const peer of accountContacts) {
+      if (peer.id === contact.id) continue;
+      onUpdateContact(peer.id, {
+        ...patch,
+        ...(customFieldPatch
+          ? { custom_fields: { ...(peer.custom_fields || {}), ...customFieldPatch } }
+          : {}),
       });
     }
-    presets.push(
-      {
-        id: 'default',
-        label: isInvestor ? 'Seed Outreach Template' : 'Enterprise Outreach Template',
-        subject: defaultSubject,
-        body: defaultBody,
+    flashSaved('Account updated in DB');
+  };
+
+  const handleSaveQuickNote = () => {
+    const trimmed = noteDraft.trim();
+    if (!trimmed || !canEdit) return;
+    const stamp = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    const nextNotes = contact.notes
+      ? `[${stamp}] ${trimmed}\n${contact.notes}`
+      : `[${stamp}] ${trimmed}`;
+    commitPatch({ notes: nextNotes }, 'Note saved');
+    setNoteDraft('');
+  };
+
+  const handleAddContactToAccount = (e: FormEvent) => {
+    e.preventDefault();
+    if (!canEdit || !onCreateAccountContact) return;
+    const first = newFirstName.trim();
+    const last = newLastName.trim();
+    const full = [first, last].filter(Boolean).join(' ') || 'New Contact';
+    const email =
+      newEmail.trim().toLowerCase() ||
+      `${(first || 'contact').toLowerCase().replace(/[^a-z0-9]/g, '')}.${Date.now().toString().slice(-4)}@${String(
+        contact.organization || 'account'
+      )
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')}.com`;
+
+    onCreateAccountContact({
+      email,
+      first_name: first,
+      last_name: last,
+      full_name: full,
+      organization: contact.organization,
+      title: newTitle.trim() || newPersona,
+      region: contact.region || 'US',
+      location: contact.location || 'United States',
+      contact_type: contact.contact_type,
+      buyer_persona: newPersona,
+      industry: contact.industry || '',
+      tier: contact.tier || 'Tier I',
+      icp_score: contact.icp_score ?? 80,
+      fortune_500: Boolean(contact.fortune_500),
+      owner_id: contact.owner_id,
+      owner_email: contact.owner_email,
+      owner: contact.owner,
+      relationship_strength: 'Warm',
+      tags: Array.from(
+        new Set([
+          ...(contact.tier ? [contact.tier] : []),
+          newPersona,
+          ...(contact.fortune_500 ? ['Fortune 500'] : []),
+        ])
+      ),
+      unsubscribed: false,
+      delivery_status: 'not_sent',
+      stage: newStage,
+      omit_from_pipeline: newStage === '1 Lead' || newStage === '9 No response',
+      product_or_instrument: contact.product_or_instrument || 'Fortifai',
+      amount_usd: 0,
+      probability: newStage === '1 Lead' ? 5 : 15,
+      expected_close: contact.expected_close || '',
+      next_step: '',
+      notes: '',
+      custom_fields: {
+        us_listed: usListedVal,
+        fit_category: fitCategoryVal,
       },
-      {
-        id: 'followup',
-        label: 'Portal Follow-Up Nudge',
-        subject: followUpSubject,
-        body: followUpBody,
-      }
-    );
-    return presets;
-  }, [
-    contact.contact_type,
-    composerAudience,
-    composerSubject,
-    composerBody,
-    currentUser.sender_display_name,
-    currentUser.full_name,
-  ]);
+    });
 
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(templatePresets[0].id);
-  const activeTemplate =
-    templatePresets.find((p) => p.id === selectedPresetId) || templatePresets[0];
+    setShowAddMember(false);
+    setNewFirstName('');
+    setNewLastName('');
+    setNewEmail('');
+    setNewTitle('');
+    flashSaved(`Added ${full} to ${contact.organization}`);
+  };
 
-  const resolvedFromAddress = useMemo(() => {
-    if (useAssignedOwnerSender) {
-      const ownerUser =
-        activeUsers.find((u) => u.id === contact.owner_id) ||
-        activeUsers.find(
-          (u) => u.email.toLowerCase() === (contact.owner_email || '').toLowerCase()
-        );
-      if (ownerUser) return formatUserSender(ownerUser);
-    }
-    return composerSendFrom || formatUserSender(currentUser);
-  }, [useAssignedOwnerSender, activeUsers, contact.owner_id, contact.owner_email, composerSendFrom, currentUser]);
-
-  const renderedPreviewSubject = renderTemplate(activeTemplate.subject, contact);
-  const renderedPreviewBody = renderTemplate(activeTemplate.body, contact);
-
-  const relevantCustomFields = customFields.filter(
-    (f) => f.entity_scope === contact.contact_type || f.entity_scope === 'both'
+  const mailtoSubject = encodeURIComponent(
+    `Fortifai — ${contact.organization || 'Enterprise Risk & Audit'}`
   );
-  const contactEvents = telemetry.filter((t) => t.contact_id === contact.id);
-
-  const superhumanSubject =
-    contact.contact_type === 'investor'
-      ? `Fortifai ($3M Seed) — ${contact.organization}`
-      : `Fortifai Continuous Assurance — ${contact.organization}`;
-
-  const superhumanBody =
-    contact.contact_type === 'investor'
-      ? `Hi ${contact.first_name || contact.full_name},\n\n${
-          contact.custom_hook ||
-          `Following up on our $3M Seed ($15M cap SAFE) and enterprise deployments across Honeywell, Nokia, and Brookfield Properties.`
-        }\n\nBest,\nVarun`
-      : `Hi ${contact.first_name || contact.full_name},\n\nFollowing up on continuous controls & risk assurance for ${contact.organization}.\n\nBest,\nVarun`;
-
-  const mailtoHref = `mailto:${encodeURIComponent(contact.email)}?subject=${encodeURIComponent(
-    renderedPreviewSubject || superhumanSubject
-  )}&body=${encodeURIComponent(renderedPreviewBody || superhumanBody)}`;
+  const mailtoBody = encodeURIComponent(
+    `Hi ${contact.first_name || contact.full_name?.split(' ')[0] || 'there'},\n\n`
+  );
+  const mailtoHref = `mailto:${contact.email}?subject=${mailtoSubject}&body=${mailtoBody}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-[1px]">
-      <div className="w-full max-w-xl bg-white h-full border-l border-[#E2E8F0] shadow-xl flex flex-col justify-between overflow-y-auto">
-        <div className="p-6 space-y-6">
-          <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                  {contact.contact_type === 'investor' ? 'Seed Investor' : 'Enterprise Account'}
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-[1px]">
+      <div className="w-full max-w-[640px] h-full bg-[var(--bg-surface)] border-l border-[var(--border-subtle)] shadow-2xl flex flex-col text-[var(--tx-primary)]">
+        {/* Top Record Header (Salesforce Record Banner Style) */}
+        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)]/70 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+              <span className="px-2 py-0.5 rounded font-semibold uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                {isCustomer ? 'Enterprise Account Record' : 'Investor Record'}
+              </span>
+              {contact.tier && (
+                <span className="px-2 py-0.5 rounded font-mono bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-secondary)]">
+                  {contact.tier}
                 </span>
-                <span
-                  className={`text-[11px] px-2 py-0.5 rounded border font-medium ${getRegionBadgeStyle(
-                    contact.region
-                  )}`}
-                >
-                  {contact.region} · {contact.location}
+              )}
+              {contact.fortune_500 && (
+                <span className="px-2 py-0.5 rounded font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                  F500
                 </span>
-                <DeliveryStatusBadge
-                  status={contact.delivery_status}
-                  openedAt={contact.opened_at}
-                  openedDurationSec={contact.opened_duration_sec}
-                  bouncedReason={contact.bounced_reason}
-                />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-900 mt-2">{contact.full_name}</h2>
-              <p className="text-xs text-slate-500">
-                {contact.title} at <strong className="text-slate-700">{contact.organization}</strong>{' '}
-                · {contact.email}
-              </p>
+              )}
+              {usListedVal === 'Yes' && (
+                <span className="px-2 py-0.5 rounded font-mono bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                  US Listed
+                </span>
+              )}
+              {saveFeedback && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
+                  <CheckCircle2 size={10} />
+                  {saveFeedback}
+                </span>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
-              aria-label="Close drawer"
-            >
-              <X size={18} />
-            </button>
+
+            <h2 className="mt-1.5 text-lg font-bold text-[var(--tx-primary)] truncate">
+              {contact.organization || 'Unnamed Account'}
+            </h2>
+            <p className="text-xs text-[var(--tx-secondary)] truncate">
+              Primary Contact: <span className="font-semibold text-[var(--tx-primary)]">{contact.full_name}</span>
+              {contact.title ? ` · ${contact.title}` : ''} ·{' '}
+              <span className="font-mono text-[11px] text-sky-400">{contact.email}</span>
+            </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Stage / Status</label>
-              <select
-                value={contact.stage}
-                disabled={!canEdit}
-                onChange={(e) => {
-                  const nextStage = e.target.value;
-                  onUpdateContact(contact.id, {
-                    stage: nextStage,
-                    unsubscribed: nextStage === 'Passed' ? true : contact.unsubscribed,
-                  });
-                }}
-                className="w-full bg-slate-50 border border-[#E2E8F0] rounded-md px-2.5 py-2 font-medium text-slate-800 disabled:opacity-60"
-              >
-                {(contact.contact_type === 'customer' ? CUSTOMER_STAGES : INVESTOR_STAGES)
-                  .filter((s) => s !== 'All')
-                  .map((st) => (
-                    <option key={st} value={st}>
-                      {st}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close record drawer"
+            className="p-1.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors shrink-0"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+          {/* SECTION 1: ACCOUNT MASTER ATTRIBUTES (ALL EDITABLE & DB-SYNCED) */}
+          <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-2">
+              <div className="flex items-center gap-1.5 font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
+                <Building2 size={13} className="text-sky-400" />
+                Account Profile &amp; Classification
+              </div>
+              <span className="text-[10.5px] text-[var(--tx-muted)]">
+                Applies across all {accountContacts.length} account {accountContacts.length === 1 ? 'contact' : 'contacts'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Account / Organization Name</span>
+                <input
+                  type="text"
+                  disabled={!canEdit}
+                  value={contact.organization || ''}
+                  onChange={(e) => commitAccountPatch({ organization: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Industry / Sector</span>
+                <input
+                  type="text"
+                  disabled={!canEdit}
+                  value={contact.industry || ''}
+                  onChange={(e) => commitAccountPatch({ industry: e.target.value })}
+                  placeholder="e.g., Aviation & Aerospace, Software..."
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Account Tier</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.tier || 'Tier I'}
+                  onChange={(e) => commitAccountPatch({ tier: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                >
+                  {TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
                     </option>
                   ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">Region</label>
-              <select
-                value={contact.region}
-                disabled={!canEdit}
-                onChange={(e) =>
-                  onUpdateContact(contact.id, { region: e.target.value as Region })
-                }
-                className="w-full bg-slate-50 border border-[#E2E8F0] rounded-md px-2.5 py-2 text-slate-800 disabled:opacity-60"
-              >
-                {REGIONS.filter((r) => r !== 'All').map((reg) => (
-                  <option key={reg} value={reg}>
-                    {reg}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-400 mb-1">
-                {contact.contact_type === 'investor'
-                  ? 'Target / Committed Check ($)'
-                  : 'Target ARR ($)'}
+                </select>
               </label>
-              <input
-                type="number"
-                disabled={!canEdit}
-                value={contact.amount_usd || 0}
-                onChange={(e) =>
-                  onUpdateContact(contact.id, { amount_usd: Number(e.target.value) })
-                }
-                className="w-full bg-slate-50 border border-[#E2E8F0] rounded-md px-2.5 py-2 text-slate-800 tabular-nums disabled:opacity-60"
-              />
-            </div>
 
-            {contact.contact_type === 'customer' ? (
-              <div>
-                <label className="block text-slate-400 mb-1">Probability (%) / Close Qtr</label>
-                <div className="flex gap-1.5">
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Fit Category</span>
+                <select
+                  disabled={!canEdit}
+                  value={fitCategoryVal}
+                  onChange={(e) =>
+                    commitAccountPatch({}, { fit_category: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                >
+                  {FIT_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">US Listed Status</span>
+                <select
+                  disabled={!canEdit}
+                  value={usListedVal}
+                  onChange={(e) =>
+                    commitAccountPatch({}, { us_listed: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                >
+                  <option value="Yes">Yes (US Listed)</option>
+                  <option value="No">No (Private / Non-US)</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Fortune 500 Status</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.fortune_500 ? 'Yes' : 'No'}
+                  onChange={(e) =>
+                    commitAccountPatch({ fortune_500: e.target.value === 'Yes' })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                >
+                  <option value="Yes">Yes (Fortune 500)</option>
+                  <option value="No">No</option>
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Region</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.region || 'US'}
+                  onChange={(e) =>
+                    commitAccountPatch({ region: e.target.value as Region })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                >
+                  {REGIONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">HQ / Location &amp; ICP Score</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    disabled={!canEdit}
+                    value={contact.location || ''}
+                    onChange={(e) => commitAccountPatch({ location: e.target.value })}
+                    placeholder="Location"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                  />
                   <input
                     type="number"
                     min={0}
                     max={100}
                     disabled={!canEdit}
-                    value={contact.probability ?? 0}
+                    value={contact.icp_score ?? 0}
                     onChange={(e) =>
-                      onUpdateContact(contact.id, { probability: Number(e.target.value) })
-                    }
-                    className="w-16 bg-slate-50 border border-[#E2E8F0] rounded-md px-2 py-2 text-slate-800 tabular-nums disabled:opacity-60"
-                  />
-                  <select
-                    value={contact.expected_close || 'Q2 2027'}
-                    disabled={!canEdit}
-                    onChange={(e) =>
-                      onUpdateContact(contact.id, {
-                        expected_close: e.target.value as Quarter,
+                      commitAccountPatch({
+                        icp_score: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
                       })
                     }
-                    className="flex-1 bg-slate-50 border border-[#E2E8F0] rounded-md px-2 py-2 text-slate-800 disabled:opacity-60"
+                    title="ICP Fit Score (0-100)"
+                    className="w-16 px-2 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-right font-mono text-[var(--tx-primary)] focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* SECTION 2: ASSOCIATED ACCOUNT CONTACTS (BUYING COMMITTEE) + ADD CONTACT */}
+          <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] pb-2">
+              <div className="flex items-center gap-1.5 font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
+                <Users size={13} className="text-emerald-400" />
+                Account Contacts &amp; Buying Committee ({accountContacts.length})
+              </div>
+              {canEdit && onCreateAccountContact && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddMember((v) => !v)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-sky-500/15 text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition-colors"
+                >
+                  <UserPlus size={12} />
+                  {showAddMember ? 'Cancel' : 'Add Contact to Account'}
+                </button>
+              )}
+            </div>
+
+            {showAddMember && (
+              <form
+                onSubmit={handleAddContactToAccount}
+                className="p-3 rounded-lg bg-[var(--bg-surface)] border border-sky-500/30 space-y-2.5"
+              >
+                <div className="text-[11px] font-semibold text-sky-400">
+                  New Contact Tagged to {contact.organization}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    required
+                    placeholder="First Name *"
+                    value={newFirstName}
+                    onChange={(e) => setNewFirstName(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                  />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Last Name *"
+                    value={newLastName}
+                    onChange={(e) => setNewLastName(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                  />
+                  <input
+                    type="email"
+                    required
+                    placeholder="Work Email *"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Job Title (e.g., Chief Audit Executive)"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                  />
+                  <select
+                    value={newPersona}
+                    onChange={(e) => setNewPersona(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
                   >
-                    {QUARTERS.map((q) => (
+                    {PERSONAS.map((p) => (
+                      <option key={p} value={p}>
+                        Persona: {p}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={newStage}
+                    onChange={(e) => setNewStage(e.target.value)}
+                    className="px-2.5 py-1.5 rounded bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                  >
+                    {stageOptions.map((st) => (
+                      <option key={st} value={st}>
+                        Stage: {st}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#2E5A8A] text-white text-[11px] font-medium hover:bg-[#244870]"
+                  >
+                    <Plus size={12} />
+                    Save &amp; Tag to {contact.organization}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="divide-y divide-[var(--border-subtle)] rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] overflow-hidden">
+              {accountContacts.map((member) => {
+                const isCurrent = member.id === contact.id;
+                return (
+                  <div
+                    key={member.id}
+                    onClick={() => {
+                      if (!isCurrent && onSelectContact) onSelectContact(member.id);
+                    }}
+                    className={`px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
+                      isCurrent
+                        ? 'bg-sky-500/10'
+                        : 'hover:bg-[var(--bg-canvas)]/70 cursor-pointer'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-[var(--tx-primary)] truncate">
+                          {member.full_name}
+                        </span>
+                        {member.buyer_persona && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-sky-400">
+                            {member.buyer_persona}
+                          </span>
+                        )}
+                        {isCurrent && (
+                          <span className="text-[10px] font-medium text-emerald-400">
+                            (Viewing)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-[var(--tx-muted)] truncate">
+                        {member.title || 'Executive'} · {member.email}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="text-[10.5px] font-mono text-[var(--tx-secondary)]">
+                        {member.stage}
+                      </div>
+                      {(member.amount_usd || 0) > 0 && (
+                        <div className="text-[10.5px] font-mono text-emerald-400">
+                          ${Math.round((member.amount_usd || 0) / 1000)}K ARR
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SECTION 3: ACTIVE CONTACT DETAILS & OPPORTUNITY PIPELINE */}
+          <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-3">
+            <div className="font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px] border-b border-[var(--border-subtle)] pb-2">
+              Contact Record &amp; Deal Opportunity ({contact.full_name})
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Full Name</span>
+                <input
+                  type="text"
+                  disabled={!canEdit}
+                  value={contact.full_name || ''}
+                  onChange={(e) => {
+                    const parts = e.target.value.trim().split(/\s+/);
+                    commitPatch({
+                      full_name: e.target.value,
+                      first_name: parts[0] || '',
+                      last_name: parts.slice(1).join(' '),
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Work Email</span>
+                <input
+                  type="email"
+                  disabled={!canEdit}
+                  value={contact.email || ''}
+                  onChange={(e) => commitPatch({ email: e.target.value.trim() })}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Job Title</span>
+                <input
+                  type="text"
+                  disabled={!canEdit}
+                  value={contact.title || ''}
+                  onChange={(e) => commitPatch({ title: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                />
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">ICP Tag / Buyer Persona</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.buyer_persona || 'CCO/GC'}
+                  onChange={(e) => commitPatch({ buyer_persona: e.target.value })}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                >
+                  {PERSONAS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Stage / Status</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.stage}
+                  onChange={(e) => {
+                    const nextStage = e.target.value;
+                    commitPatch({
+                      stage: nextStage,
+                      omit_from_pipeline:
+                        nextStage === '1 Lead' ||
+                        nextStage === '8 Closed Lost' ||
+                        nextStage === '9 No response' ||
+                        nextStage === 'Passed',
+                    });
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                >
+                  {stageOptions.map((st) => (
+                    <option key={st} value={st}>
+                      {st}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Primary Product / Wedge</span>
+                <select
+                  disabled={!canEdit}
+                  value={contact.product_or_instrument || 'Fortifai'}
+                  onChange={(e) =>
+                    commitPatch({ product_or_instrument: e.target.value })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                >
+                  {PRODUCTS.map((prod) => (
+                    <option key={prod} value={prod}>
+                      {prod}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] text-[var(--tx-muted)]">Target ARR ($ USD)</span>
+                <input
+                  type="number"
+                  step={10000}
+                  disabled={!canEdit}
+                  value={contact.amount_usd ?? 0}
+                  onChange={(e) =>
+                    commitPatch({ amount_usd: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <span className="text-[11px] text-[var(--tx-muted)]">Prob (%)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={5}
+                    disabled={!canEdit}
+                    value={contact.probability ?? 0}
+                    onChange={(e) =>
+                      commitPatch({
+                        probability: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] font-mono"
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-[11px] text-[var(--tx-muted)]">Close Qtr</span>
+                  <select
+                    disabled={!canEdit}
+                    value={contact.expected_close || ''}
+                    onChange={(e) => commitPatch({ expected_close: e.target.value })}
+                    className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                  >
+                    <option value="">—</option>
+                    {CLOSE_QUARTERS.filter(Boolean).map((q) => (
                       <option key={q} value={q}>
                         {q}
                       </option>
                     ))}
                   </select>
-                </div>
+                </label>
               </div>
-            ) : (
-              <div>
-                <label className="block text-slate-400 mb-1">Outreach Suppression</label>
-                <button
-                  type="button"
+
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-[11px] text-[var(--tx-muted)]">Assigned Deal / Contact Owner</span>
+                <select
                   disabled={!canEdit}
-                  onClick={() =>
-                    onUpdateContact(contact.id, {
-                      unsubscribed: !contact.unsubscribed,
-                    })
-                  }
-                  className={`w-full px-2.5 py-2 rounded-md border font-medium text-left disabled:opacity-60 ${
-                    contact.unsubscribed
-                      ? 'bg-rose-50 text-rose-700 border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
+                  value={contact.owner_id || ''}
+                  onChange={(e) => {
+                    const chosen = activeUsers.find((u) => u.id === e.target.value);
+                    if (chosen) {
+                      commitPatch({
+                        owner_id: chosen.id,
+                        owner_email: chosen.email,
+                        owner: chosen.full_name.split(' ')[0] || chosen.full_name,
+                      });
+                    }
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
                 >
-                  {contact.unsubscribed ? 'Suppressed' : 'Active / Eligible'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Assigned Deal / Contact Owner (Required from active crm_users) */}
-          <div className="text-xs">
-            <label className="block text-slate-400 mb-1">
-              Assigned Deal / Contact Owner (Active crm_users) *
-            </label>
-            <select
-              value={contact.owner_id || ''}
-              disabled={!canEdit}
-              required
-              onChange={(e) => {
-                const selected = activeUsers.find((u) => u.id === e.target.value);
-                if (!selected) return;
-                onUpdateContact(contact.id, {
-                  owner_id: selected.id,
-                  owner_email: selected.email,
-                  owner: selected.full_name,
-                });
-              }}
-              className="w-full bg-slate-50 border border-[#E2E8F0] rounded-md px-2.5 py-2 font-medium text-slate-800 disabled:opacity-60"
-            >
-              {!activeUsers.some((u) => u.id === contact.owner_id) && (
-                <option value={contact.owner_id || ''}>
-                  {contact.owner ? `${contact.owner} (Select active owner)` : 'Select active owner...'}
-                </option>
-              )}
-              {activeUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name} ({u.email}) — {u.role}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {contact.contact_type === 'investor' && (
-            <div className="text-xs">
-              <label className="block text-slate-400 mb-1">
-                Custom 1-Sentence Opening Hook (&#123;&#123;custom_hook&#125;&#125;)
+                  {activeUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name} ({u.email}) — {u.role}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <textarea
-                rows={3}
-                disabled={!canEdit}
-                value={contact.custom_hook || ''}
-                onChange={(e) =>
-                  onUpdateContact(contact.id, { custom_hook: e.target.value })
-                }
-                className="w-full p-2.5 bg-slate-50 border border-[#E2E8F0] rounded-md text-slate-800 disabled:opacity-60"
-              />
-            </div>
-          )}
 
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Next Action / Follow-Up</label>
-              <input
-                type="text"
-                disabled={!canEdit}
-                value={contact.next_step || ''}
-                onChange={(e) =>
-                  onUpdateContact(contact.id, { next_step: e.target.value })
-                }
-                className="w-full px-2.5 py-2 bg-slate-50 border border-[#E2E8F0] rounded-md text-slate-800 disabled:opacity-60"
-              />
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-[11px] text-[var(--tx-muted)]">Next Action / Follow-Up</span>
+                <input
+                  type="text"
+                  disabled={!canEdit}
+                  value={contact.next_step || ''}
+                  onChange={(e) => commitPatch({ next_step: e.target.value })}
+                  placeholder="Next milestone or executive follow-up..."
+                  className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                />
+              </label>
             </div>
           </div>
 
-          {/* Quick Notes (Internal Team Reference) */}
-          <div className="border-t border-slate-100 pt-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-800">Quick Notes</span>
-              <span className="text-[11px] text-slate-400 tabular-nums">
-                {(contact.quick_notes?.length || 0) + (contact.notes?.trim() ? 1 : 0)}{' '}
-                {(contact.quick_notes?.length || 0) + (contact.notes?.trim() ? 1 : 0) === 1
-                  ? 'entry'
-                  : 'entries'}{' '}
-                · Internal team reference
+          {/* SECTION 4: QUICK NOTES & ACTIVITY LOG */}
+          <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
+                Quick Notes &amp; Internal Account Summary
               </span>
+              <span className="text-[10.5px] text-[var(--tx-muted)]">Internal team reference</span>
             </div>
 
             {canEdit && (
-              <div className="flex gap-2 items-start">
-                <textarea
-                  rows={2}
-                  maxLength={500}
-                  value={quickNoteDraft}
-                  onChange={(e) => setQuickNoteDraft(e.target.value)}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && quickNoteDraft.trim()) {
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                       e.preventDefault();
-                      const trimmed = quickNoteDraft.trim();
-                      const nextEntry = {
-                        id: `qn_${Date.now()}`,
-                        text: trimmed,
-                        author_name: currentUser.full_name,
-                        author_email: currentUser.email,
-                        created_at: new Date().toISOString(),
-                      };
-                      onUpdateContact(contact.id, {
-                        quick_notes: [nextEntry, ...(contact.quick_notes || [])],
-                      });
-                      setQuickNoteDraft('');
+                      handleSaveQuickNote();
                     }
                   }}
-                  placeholder={`Add a short internal note on ${contact.first_name || contact.full_name}... (⌘+Enter to save)`}
-                  className="flex-1 px-2.5 py-2 text-xs bg-slate-50 border border-[#E2E8F0] rounded-md text-slate-800 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-slate-400 resize-none"
+                  placeholder={`Add a short internal note on ${contact.first_name || contact.organization}...`}
+                  className="flex-1 px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
                 />
                 <button
                   type="button"
-                  disabled={!quickNoteDraft.trim()}
-                  onClick={() => {
-                    const trimmed = quickNoteDraft.trim();
-                    if (!trimmed) return;
-                    const nextEntry = {
-                      id: `qn_${Date.now()}`,
-                      text: trimmed,
-                      author_name: currentUser.full_name,
-                      author_email: currentUser.email,
-                      created_at: new Date().toISOString(),
-                    };
-                    onUpdateContact(contact.id, {
-                      quick_notes: [nextEntry, ...(contact.quick_notes || [])],
-                    });
-                    setQuickNoteDraft('');
-                  }}
-                  className="px-3 py-2 text-xs font-medium text-white bg-[#0D1520] rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+                  onClick={handleSaveQuickNote}
+                  className="px-3 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 font-medium shrink-0"
                 >
                   Save Note
                 </button>
               </div>
             )}
 
-            {(contact.quick_notes && contact.quick_notes.length > 0) || contact.notes?.trim() ? (
-              <div className="border border-[#E2E8F0] rounded-md divide-y divide-slate-100 bg-white">
-                {(contact.quick_notes || []).map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="px-3 py-2.5 text-xs flex items-start justify-between gap-2 group"
-                  >
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-slate-800 whitespace-pre-wrap break-words leading-relaxed">
-                        {entry.text}
-                      </p>
-                      <div className="text-[11px] text-slate-400 tabular-nums">
-                        {entry.author_name} ·{' '}
-                        {new Date(entry.created_at).toLocaleString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
-                    </div>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        aria-label="Delete quick note"
-                        onClick={() =>
-                          onUpdateContact(contact.id, {
-                            quick_notes: (contact.quick_notes || []).filter(
-                              (n) => n.id !== entry.id
-                            ),
-                          })
-                        }
-                        className="p-1 text-slate-300 hover:text-rose-600 rounded transition-colors shrink-0"
-                        title="Remove note"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {contact.notes?.trim() && (
-                  <div className="px-3 py-2.5 text-xs flex items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-slate-800 whitespace-pre-wrap break-words leading-relaxed">
-                        {contact.notes}
-                      </p>
-                      <div className="text-[11px] text-slate-400">
-                        Account summary note · Internal
-                      </div>
-                    </div>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        aria-label="Clear summary note"
-                        onClick={() => onUpdateContact(contact.id, { notes: '' })}
-                        className="p-1 text-slate-300 hover:text-rose-600 rounded transition-colors shrink-0"
-                        title="Remove note"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-400">
-                No internal quick notes recorded for {contact.first_name || contact.full_name} yet.
-              </div>
+            {contact.notes && (
+              <pre className="p-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[11px] text-[var(--tx-secondary)] whitespace-pre-wrap font-sans">
+                {contact.notes}
+              </pre>
             )}
           </div>
 
-          {/* Custom Fields */}
-          {relevantCustomFields.length > 0 && (
-            <div className="border-t border-slate-100 pt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-800">Additional Details</span>
+          {/* SECTION 5: DYNAMIC CUSTOM FIELDS */}
+          {customFields.length > 0 && (
+            <div className="rounded-xl bg-[var(--bg-canvas)]/55 border border-[var(--border-subtle)] p-4 space-y-2.5">
+              <div className="font-semibold text-[var(--tx-primary)] uppercase tracking-wider text-[11px]">
+                Additional Custom Fields
               </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                {relevantCustomFields.map((cf) => (
-                  <div key={cf.id}>
-                    <label className="block text-slate-400 mb-1">{cf.field_label}</label>
-                    <CustomFieldCell
-                      contact={contact}
-                      field={cf}
-                      disabled={!canEdit}
-                      onUpdateValue={onUpdateCustomFieldValue}
-                    />
-                  </div>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {customFields.map((cf) => {
+                  const val = contact.custom_fields?.[cf.field_key] ?? '';
+                  return (
+                    <label key={cf.id} className="space-y-1">
+                      <span className="text-[11px] text-[var(--tx-muted)]">{cf.field_label}</span>
+                      {cf.field_type === 'select' && cf.select_options ? (
+                        <select
+                          disabled={!canEdit}
+                          value={String(val)}
+                          onChange={(e) => {
+                            onUpdateCustomFieldValue(contact.id, cf.field_key, e.target.value);
+                            flashSaved('Field saved');
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                        >
+                          <option value="">—</option>
+                          {cf.select_options.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={cf.field_type === 'number' ? 'number' : 'text'}
+                          disabled={!canEdit}
+                          value={String(val)}
+                          onChange={(e) => {
+                            onUpdateCustomFieldValue(
+                              contact.id,
+                              cf.field_key,
+                              cf.field_type === 'number' ? Number(e.target.value) : e.target.value
+                            );
+                            flashSaved('Field saved');
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)]"
+                        />
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}
-
-          {/* Visual Email Preview (Live Data Rendering) */}
-          <div className="border-t border-slate-100 pt-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <Eye size={13} className="text-slate-500" />
-                <span className="text-xs font-semibold text-slate-800">Visual Email Preview</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  aria-label="Select email template to preview"
-                  value={activeTemplate.id}
-                  onChange={(e) => setSelectedPresetId(e.target.value)}
-                  className="text-[11px] bg-slate-50 border border-[#E2E8F0] rounded px-2 py-1 text-slate-700 font-medium focus:outline-none focus:border-slate-400"
-                >
-                  {templatePresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-                {canSendCampaigns && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onComposeEmail(contact, activeTemplate.subject, activeTemplate.body)
-                    }
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline whitespace-nowrap shrink-0"
-                  >
-                    <Mail size={11} />
-                    Load in Composer
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="border border-[#E2E8F0] rounded-lg overflow-hidden bg-white">
-              <div className="bg-slate-50 border-b border-slate-200/80 px-3.5 py-2.5 space-y-1 text-[11px]">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-slate-400 w-12 shrink-0">From:</span>
-                  <span className="font-mono text-slate-700 truncate">{resolvedFromAddress}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-slate-400 w-12 shrink-0">To:</span>
-                  <span className="font-medium text-slate-800 truncate">
-                    {contact.full_name} &lt;{contact.email}&gt;
-                  </span>
-                </div>
-                {bccEnabled && (
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-slate-400 w-12 shrink-0">BCC:</span>
-                    <span className="font-mono text-indigo-700 truncate">
-                      {currentUser.email} (Superhuman sync)
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-baseline gap-2 pt-0.5">
-                  <span className="text-slate-400 w-12 shrink-0">Subject:</span>
-                  <span className="font-semibold text-slate-900">{renderedPreviewSubject}</span>
-                </div>
-              </div>
-
-              <div className="p-4 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap max-h-64 overflow-y-auto">
-                {renderedPreviewBody}
-                <div className="mt-4 pt-2.5 border-t border-slate-100 text-[11px] text-slate-400">
-                  Tracked portal link active · If you&apos;d prefer not to receive updates,{' '}
-                  <span className="underline">unsubscribe here</span>.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Inbound Reply Summary & Manual Logging */}
-          <div className="border-t border-slate-100 pt-4 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-800">
-                Inbound Reply Logging &amp; Telemetry
-              </span>
-              {canEdit && onLogInboundReply && (
-                <button
-                  type="button"
-                  onClick={() => setReplyFormOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:underline"
-                >
-                  <MessageSquareReply size={12} />
-                  {replyFormOpen ? 'Cancel' : '+ Log Inbound Reply'}
-                </button>
-              )}
-            </div>
-
-            {contact.last_reply_snippet && (
-              <div className="p-3 rounded-md bg-amber-50/70 border border-amber-200 text-xs space-y-1">
-                <div className="flex items-center justify-between text-[11px] text-amber-800 font-medium">
-                  <span className="truncate">{contact.last_reply_subject || 'Inbound Reply'}</span>
-                  <span className="shrink-0">{contact.replied_at || 'Recorded'}</span>
-                </div>
-                <p className="text-slate-700 leading-relaxed">{contact.last_reply_snippet}</p>
-              </div>
-            )}
-
-            {replyFormOpen && onLogInboundReply && (
-              <div className="p-3 rounded-md bg-slate-50 border border-[#E2E8F0] space-y-2 text-xs">
-                <input
-                  type="text"
-                  value={replySubject}
-                  onChange={(e) => setReplySubject(e.target.value)}
-                  placeholder="Reply subject..."
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded text-slate-800"
-                />
-                <textarea
-                  rows={2}
-                  value={replySnippet}
-                  onChange={(e) => setReplySnippet(e.target.value)}
-                  placeholder={`Paste reply summary from ${contact.full_name}...`}
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded text-slate-800"
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    disabled={!replySnippet.trim() || savingReply}
-                    onClick={async () => {
-                      setSavingReply(true);
-                      await onLogInboundReply(contact, {
-                        subject: replySubject.trim() || 'Inbound Reply',
-                        snippet: replySnippet.trim(),
-                      });
-                      setSavingReply(false);
-                      setReplySnippet('');
-                      setReplyFormOpen(false);
-                    }}
-                    className="px-3 py-1.5 bg-[#0D1520] text-white rounded font-medium hover:bg-slate-800 disabled:opacity-40"
-                  >
-                    {savingReply ? 'Saving...' : 'Record Reply'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {contactEvents.length === 0 ? (
-              <div className="text-xs text-slate-400">
-                No portal visits or Resend events recorded yet.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {contactEvents.map((evt) => (
-                  <div
-                    key={evt.id}
-                    className="p-2.5 rounded-md bg-slate-50 border border-slate-200/70 text-xs"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="font-mono text-slate-600">{evt.source}</span>
-                      <span>{evt.timestamp}</span>
-                    </div>
-                    <div className="text-slate-800 mt-1">{evt.detail}</div>
-                    {evt.sender_from && (
-                      <div className="text-[10px] font-mono text-slate-500 mt-1">
-                        From: {evt.sender_from}
-                      </div>
-                    )}
-                    {evt.reply_snippet && (
-                      <div className="text-[11px] text-amber-800 mt-1 bg-amber-50/70 px-2 py-1 rounded border border-amber-200/70">
-                        {evt.reply_snippet}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="p-4 bg-slate-50 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2">
+        {/* Sticky Footer Action Bar */}
+        <div className="px-5 py-3.5 bg-[var(--bg-canvas)] border-t border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900"
+              className="px-3 py-1.5 rounded-md text-xs font-medium text-[var(--tx-secondary)] hover:text-[var(--tx-primary)]"
             >
               Close
             </button>
@@ -738,60 +919,47 @@ export function ContactDrawer({
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm(`Delete ${contact.full_name} (${contact.organization}) permanently?`)) {
-                    onDeleteContact(contact.id);
-                  }
+                  onDeleteContact(contact.id);
+                  onClose();
                 }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-md hover:bg-rose-100"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors"
               >
                 <Trash2 size={12} />
-                Delete Account
+                Delete
               </button>
             )}
           </div>
+
           <div className="flex items-center gap-2 flex-wrap">
-            {contact.contact_type === 'customer' && onOpenAccountIntelligence && (
+            {isCustomer && onOpenAccountIntelligence && (
               <button
                 type="button"
                 onClick={() => onOpenAccountIntelligence(contact)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 whitespace-nowrap"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-colors"
               >
                 <Sparkles size={13} />
                 Account Intelligence
               </button>
             )}
-            {canSendCampaigns ? (
-              <a
-                href={mailtoHref}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-[#E2E8F0] rounded-md hover:bg-slate-100 whitespace-nowrap"
-                title="Open 1-to-1 personal draft in Superhuman / Mail with native read receipts"
-              >
-                <ExternalLink size={13} />
-                Open in Superhuman
-              </a>
-            ) : (
-              <button
-                type="button"
-                disabled
-                title="Requires can_send_campaigns permission"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-800 bg-white border border-[#E2E8F0] rounded-md opacity-40 cursor-not-allowed whitespace-nowrap"
-              >
-                <ExternalLink size={13} />
-                Open in Superhuman
-              </button>
+            {canSendCampaigns && (
+              <>
+                <a
+                  href={mailtoHref}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
+                >
+                  <ExternalLink size={13} />
+                  Superhuman
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onComposeEmail(contact)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium bg-[#2E5A8A] text-white hover:bg-[#244870] transition-colors"
+                >
+                  <Send size={13} />
+                  Compose Email
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              disabled={!canSendCampaigns}
-              onClick={() =>
-                onComposeEmail(contact, activeTemplate.subject, activeTemplate.body)
-              }
-              title={!canSendCampaigns ? 'Requires can_send_campaigns permission' : undefined}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-[#0D1520] rounded-md hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-            >
-              <Send size={13} />
-              Compose Personal Email
-            </button>
           </div>
         </div>
       </div>
