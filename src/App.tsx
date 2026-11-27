@@ -312,6 +312,7 @@ function ScaleWorkspace({
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [hoveredRailItem, setHoveredRailItem] = useState<{ label: string; top: number } | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     return localStorage.getItem("fortifai_scale_theme") === "dark" ? "dark" : "light";
@@ -2817,19 +2818,37 @@ function ScaleWorkspace({
       onNotify={showToast}
     >
       <div className="min-h-screen flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
-        {/* Deep Navy 52px Icon Rail (#0D1520) with Instant Hover Tooltips */}
+        {/* Deep Navy 52px Icon Rail (#0D1520) with Unclipped Fixed Hover Tooltips */}
         <aside
           className={`${
             sidebarCollapsed ? "w-[52px]" : "w-[206px]"
           } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 min-h-screen sticky top-0 h-screen z-30 select-none`}
         >
+          {/* Floating Unclipped Hover Tooltip for 52px Icon Rail */}
+          {sidebarCollapsed && hoveredRailItem && (
+            <div
+              style={{ top: hoveredRailItem.top }}
+              className="pointer-events-none fixed left-[60px] -translate-y-1/2 px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/90 z-[9999]"
+            >
+              {hoveredRailItem.label}
+            </div>
+          )}
+
           {/* Top Brand + Expand/Collapse Rail Button */}
           <div className="h-[46px] px-2.5 flex items-center justify-between border-b border-[#1E2D42] shrink-0">
             <button
               type="button"
-              onClick={() => setSidebarCollapsed((prev) => !prev)}
-              className="group relative flex items-center gap-2.5 min-w-0 p-1.5 rounded-md hover:bg-white/5 transition-colors"
-              title={sidebarCollapsed ? "Expand navigation rail" : "Collapse to icon rail"}
+              onClick={() => {
+                setHoveredRailItem(null);
+                setSidebarCollapsed((prev) => !prev);
+              }}
+              onMouseEnter={(e) => {
+                if (!sidebarCollapsed) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                setHoveredRailItem({ label: "Expand Sidebar", top: r.top + r.height / 2 });
+              }}
+              onMouseLeave={() => setHoveredRailItem(null)}
+              className="flex items-center gap-2.5 min-w-0 p-1.5 rounded-md hover:bg-white/5 transition-colors"
               aria-label={sidebarCollapsed ? "Expand navigation rail" : "Collapse to icon rail"}
             >
               <span
@@ -2842,11 +2861,6 @@ function ScaleWorkspace({
                     <CmsText id="shell.brand_name" defaultValue="Fortifai Scale" section="Header & Sidebar" />
                   </div>
                 </div>
-              )}
-              {sidebarCollapsed && (
-                <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 fixed left-[60px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
-                  Expand Sidebar
-                </span>
               )}
             </button>
             {!sidebarCollapsed && (
@@ -2861,8 +2875,8 @@ function ScaleWorkspace({
             )}
           </div>
 
-          {/* Icon-First Navigation Rail with Hover Tooltips */}
-          <nav className="flex-1 overflow-y-auto overflow-x-visible py-2.5 px-2 flex flex-col gap-1">
+          {/* Icon-First Navigation Rail */}
+          <nav className="flex-1 overflow-y-auto py-2.5 px-2 flex flex-col gap-1">
             {perms.can_view_customers && (
               <div className="space-y-1">
                 {!sidebarCollapsed && (
@@ -2886,7 +2900,13 @@ function ScaleWorkspace({
                         key={item.id}
                         type="button"
                         onClick={() => navigateToTab(item.id)}
-                        className={`group relative w-full flex items-center ${
+                        onMouseEnter={(e) => {
+                          if (!sidebarCollapsed) return;
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setHoveredRailItem({ label: item.label, top: r.top + r.height / 2 });
+                        }}
+                        onMouseLeave={() => setHoveredRailItem(null)}
+                        className={`w-full flex items-center ${
                           sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                         } rounded-[6px] text-left transition-colors ${
                           isActive
@@ -2895,13 +2915,9 @@ function ScaleWorkspace({
                         }`}
                       >
                         <Icon size={16} className={isActive ? "text-sky-400 shrink-0" : "shrink-0"} />
-                        {!sidebarCollapsed ? (
+                        {!sidebarCollapsed && (
                           <span className="text-[12.5px] truncate">
                             <CmsText id={`sidebar.nav.${item.id}`} defaultValue={item.label} section="Header & Sidebar" />
-                          </span>
-                        ) : (
-                          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
-                            {item.label}
                           </span>
                         )}
                       </button>
@@ -2935,7 +2951,13 @@ function ScaleWorkspace({
                         key={item.id}
                         type="button"
                         onClick={() => navigateToTab(item.id)}
-                        className={`group relative w-full flex items-center ${
+                        onMouseEnter={(e) => {
+                          if (!sidebarCollapsed) return;
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setHoveredRailItem({ label: item.label, top: r.top + r.height / 2 });
+                        }}
+                        onMouseLeave={() => setHoveredRailItem(null)}
+                        className={`w-full flex items-center ${
                           sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                         } rounded-[6px] text-left transition-colors ${
                           isActive
@@ -2944,13 +2966,9 @@ function ScaleWorkspace({
                         }`}
                       >
                         <Icon size={16} className={isActive ? "text-sky-400 shrink-0" : "shrink-0"} />
-                        {!sidebarCollapsed ? (
+                        {!sidebarCollapsed && (
                           <span className="text-[12.5px] truncate">
                             <CmsText id={`sidebar.nav.${item.id}`} defaultValue={item.label} section="Header & Sidebar" />
-                          </span>
-                        ) : (
-                          <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
-                            {item.label}
                           </span>
                         )}
                       </button>
@@ -2959,64 +2977,60 @@ function ScaleWorkspace({
               </div>
             )}
 
-            {/* Bottom Governance Icons (Admin & Connections/Sync) */}
-            <div className="mt-auto pt-2 border-t border-slate-800/80 space-y-1">
-              {perms.can_manage_users && (
+            {/* Unified Settings & Admin Governance Icon (Combines Admin & RBAC + Connections & Sync) */}
+            {(perms.can_manage_users || currentUser.role === "super_admin") && (
+              <div className="mt-auto pt-2 border-t border-slate-800/80">
                 <button
                   type="button"
-                  onClick={() => navigateToTab("admin")}
-                  className={`group relative w-full flex items-center ${
+                  onClick={() => navigateToTab(perms.can_manage_users ? "admin" : "settings")}
+                  onMouseEnter={(e) => {
+                    if (!sidebarCollapsed) return;
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setHoveredRailItem({
+                      label: currentUser.role === "super_admin" ? "Settings & Admin" : "Admin & RBAC",
+                      top: r.top + r.height / 2,
+                    });
+                  }}
+                  onMouseLeave={() => setHoveredRailItem(null)}
+                  className={`w-full flex items-center ${
                     sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                   } rounded-[6px] text-left transition-colors ${
-                    activeTab === "admin"
+                    activeTab === "admin" || activeTab === "settings"
                       ? "bg-[#1B2B44] text-white font-medium"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
-                  <Shield size={16} className={activeTab === "admin" ? "text-sky-400 shrink-0" : "shrink-0"} />
-                  {!sidebarCollapsed ? (
-                    <span className="text-[12.5px] truncate">Admin & RBAC</span>
-                  ) : (
-                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
-                      Admin & RBAC
+                  <Settings
+                    size={16}
+                    className={activeTab === "admin" || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
+                  />
+                  {!sidebarCollapsed && (
+                    <span className="text-[12.5px] truncate">
+                      {currentUser.role === "super_admin" ? "Settings & Admin" : "Admin & RBAC"}
                     </span>
                   )}
                 </button>
-              )}
-              {currentUser.role === "super_admin" && (
-                <button
-                  type="button"
-                  onClick={() => navigateToTab("settings")}
-                  className={`group relative w-full flex items-center ${
-                    sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
-                  } rounded-[6px] text-left transition-colors ${
-                    activeTab === "settings"
-                      ? "bg-[#1B2B44] text-white font-medium"
-                      : "text-slate-400 hover:text-white hover:bg-white/5"
-                  }`}
-                >
-                  <Settings size={16} className={activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"} />
-                  {!sidebarCollapsed ? (
-                    <span className="text-[12.5px] truncate">Connections & Sync</span>
-                  ) : (
-                    <span className="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 absolute left-[46px] px-2.5 py-1 rounded-md bg-[#0F172A] text-white text-[11.5px] font-medium whitespace-nowrap shadow-xl border border-slate-700/80 z-50">
-                      Connections & Sync
-                    </span>
-                  )}
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </nav>
 
-          {/* Bottom User Avatar + Popover Menu (Theme, Portals, Sign Out) */}
+          {/* Bottom User Avatar + Popover Menu */}
           <div className="relative p-2 border-t border-slate-800/80 shrink-0">
             <button
               type="button"
-              onClick={() => setAccountMenuOpen((prev) => !prev)}
-              className={`group w-full flex items-center ${
+              onClick={() => {
+                setHoveredRailItem(null);
+                setAccountMenuOpen((prev) => !prev);
+              }}
+              onMouseEnter={(e) => {
+                if (!sidebarCollapsed || accountMenuOpen) return;
+                const r = e.currentTarget.getBoundingClientRect();
+                setHoveredRailItem({ label: `${currentUser.full_name} · Account`, top: r.top + r.height / 2 });
+              }}
+              onMouseLeave={() => setHoveredRailItem(null)}
+              className={`w-full flex items-center ${
                 sidebarCollapsed ? "justify-center py-1" : "gap-2.5 px-2 py-1.5"
               } rounded-md hover:bg-white/5 transition-colors`}
-              title="Account, Theme & Portals"
             >
               <div className="h-7 w-7 rounded-full bg-[#1E3A5F] border border-sky-400/30 text-sky-200 flex items-center justify-center text-[11px] font-semibold shrink-0">
                 {(currentUser.full_name || "U")
@@ -3036,10 +3050,7 @@ function ScaleWorkspace({
 
             {accountMenuOpen && (
               <>
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setAccountMenuOpen(false)}
-                />
+                <div className="fixed inset-0 z-40" onClick={() => setAccountMenuOpen(false)} />
                 <div className="absolute bottom-12 left-2 w-64 bg-[#0F172A] border border-slate-700/90 rounded-lg shadow-2xl p-3 space-y-2.5 text-xs z-50 text-slate-200">
                   <div className="pb-2 border-b border-slate-800">
                     <div className="font-semibold text-white truncate">{currentUser.full_name}</div>
@@ -3049,35 +3060,8 @@ function ScaleWorkspace({
                     </span>
                   </div>
 
-                  {/* Theme Switcher inside Account Popover */}
-                  <div className="flex items-center justify-between py-1">
-                    <span className="text-slate-400 text-[11.5px]">Appearance</span>
-                    <div className="inline-flex rounded-md bg-[#090F17] p-0.5 border border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setTheme("light")}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                          theme === "light" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
-                        }`}
-                      >
-                        <Sun size={11} />
-                        Light
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTheme("dark")}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                          theme === "dark" ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
-                        }`}
-                      >
-                        <Moon size={11} />
-                        Dark
-                      </button>
-                    </div>
-                  </div>
-
                   {/* Connected Portals Status */}
-                  <div className="pt-2 border-t border-slate-800 space-y-1 text-[11px]">
+                  <div className="space-y-1 text-[11px]">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
                       Connected Portals
                     </div>
@@ -3226,6 +3210,16 @@ function ScaleWorkspace({
               </button>
             )}
             <LiveCmsHeaderButton />
+            <button
+              type="button"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-200 bg-[#152033] border border-[#263852] rounded-md hover:bg-[#1E2D42] hover:text-white transition-colors whitespace-nowrap shrink-0"
+              title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              aria-label={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {theme === "dark" ? <Sun size={13} className="text-amber-400" /> : <Moon size={13} className="text-sky-300" />}
+              <span className="hidden md:inline">{theme === "dark" ? "Light" : "Dark"}</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsAskMeOpen((prev) => !prev)}
