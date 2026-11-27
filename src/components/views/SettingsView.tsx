@@ -371,6 +371,61 @@ export function SettingsView({
           </div>
         </div>
       )}
-</div>
+
+      {/* 2-Way Outlook & Superhuman Sync Card (varun@fortifai.io) */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--tx-primary)]">
+              Outlook &amp; Superhuman 2-Way Sync (varun@fortifai.io)
+            </h3>
+            <p className="text-xs text-[var(--tx-muted)] mt-0.5">
+              Streams inbound replies &amp; 1-to-1 sent threads from Microsoft 365 into Scale with corporate domain matching (@honeywell.com, @nokia.com, etc.), automatically pinning active accounts to the top of Accounts &amp; Targets.
+            </p>
+          </div>
+          <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            Endpoint Active: /api/webhooks/outlook-sync
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] space-y-1.5">
+            <div className="font-semibold text-[var(--tx-primary)]">
+              Flow 1 · Inbound Replies (Power Automate Trigger: When a new email arrives V3)
+            </div>
+            <div className="text-[11px] text-[var(--tx-muted)] font-mono">
+              POST https://fortifai-crm-git.vercel.app/api/webhooks/outlook-sync
+            </div>
+            <pre className="p-2 rounded bg-slate-950 text-slate-200 text-[10.5px] overflow-x-auto">{`{
+  "direction": "inbound",
+  "ownerMailbox": "varun@fortifai.io",
+  "fromEmail": "@{triggerOutputs()?['body/from']}",
+  "toEmail": "varun@fortifai.io",
+  "subject": "@{triggerOutputs()?['body/subject']}",
+  "bodyPreview": "@{triggerOutputs()?['body/bodyPreview']}",
+  "receivedAt": "@{triggerOutputs()?['body/receivedDateTime']}"
+}`}</pre>
+          </div>
+
+          <div className="p-3 rounded border border-[var(--border-subtle)] bg-[var(--bg-subtle)] space-y-1.5">
+            <div className="font-semibold text-[var(--tx-primary)]">
+              Flow 2 · Outbound 1-to-1 Sends (Trigger: When an email is sent from varun@fortifai.io)
+            </div>
+            <div className="text-[11px] text-[var(--tx-muted)] font-mono">
+              Header: x-webhook-secret = &lt;RESEND_WEBHOOK_SECRET&gt;
+            </div>
+            <pre className="p-2 rounded bg-slate-950 text-slate-200 text-[10.5px] overflow-x-auto">{`{
+  "direction": "outbound",
+  "ownerMailbox": "varun@fortifai.io",
+  "fromEmail": "varun@fortifai.io",
+  "toEmail": "@{triggerOutputs()?['body/toRecipients']}",
+  "subject": "@{triggerOutputs()?['body/subject']}",
+  "receivedAt": "@{triggerOutputs()?['body/sentDateTime']}"
+}`}</pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
   );
 }
