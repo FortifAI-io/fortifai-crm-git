@@ -18,6 +18,40 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [infoBanner, setInfoBanner] = useState<string | null>(null);
+
+  const handleForgotPassword = async () => {
+    setError(null);
+    setInfoBanner(null);
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setError('Enter your @fortifai.io or @tryfortifai.us email above first.');
+      return;
+    }
+    const domainAllowed = ALLOWED_AUTH_DOMAINS.some((d) => normalized.endsWith(d));
+    if (!domainAllowed) {
+      setError('Access restricted to @fortifai.io or @tryfortifai.us accounts.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const resp = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalized }),
+      });
+      const data = (await resp.json()) as { ok?: boolean; error?: string };
+      if (!resp.ok || !data.ok) {
+        setError(data.error || 'Could not send password setup link.');
+        return;
+      }
+      setInfoBanner(`Password setup link sent to ${normalized} from support@fortifai.io. Check your inbox and click the link to set your password.`);
+    } catch {
+      setError('Unable to reach server to send password setup email.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -211,6 +245,12 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
               </div>
             </div>
 
+            {infoBanner && (
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 flex items-start gap-2">
+                <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-400" />
+                <span>{infoBanner}</span>
+              </div>
+            )}
             {error && (
               <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-start gap-2">
                 <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-400" />
@@ -262,9 +302,19 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
             </div>
 
             <div>
-              <label className="block font-medium text-slate-300 mb-1.5">
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block font-medium text-slate-300">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={handleForgotPassword}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 hover:underline disabled:opacity-50"
+                >
+                  First time or forgot password? Email setup link
+                </button>
+              </div>
               <div className="relative">
                 <KeyRound size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input

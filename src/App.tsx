@@ -2668,6 +2668,7 @@ function ScaleWorkspace({
             email: newUser.email,
             full_name: newUser.full_name,
             role: newUser.role,
+            permissions: newUser.permissions,
           }),
         });
         const out = (await resp.json()) as { ok?: boolean; error?: string };

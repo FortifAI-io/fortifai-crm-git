@@ -1914,6 +1914,91 @@ app.post("/api/admin/send-invite", async (req, res) => {
     return res.status(500).json({ ok: false, error: msg });
   }
 });
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const email = String((req.body || {}).email || "").trim().toLowerCase();
+    if (!email || !isValidEmail(email) || !isAllowedDomainEmail(email)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Enter a valid @fortifai.io or @tryfortifai.us workspace email."
+      });
+    }
+    let dbUser = null;
+    try {
+      dbUser = await Promise.race([
+        fetchCrmUserByEmail(email),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2500))
+      ]);
+    } catch {
+      dbUser = null;
+    }
+    if (!dbUser && FALLBACK_CRM_USERS[email]) {
+      dbUser = FALLBACK_CRM_USERS[email];
+    }
+    if (!dbUser || dbUser.is_active === false) {
+      return res.status(403).json({
+        ok: false,
+        error: `"${email}" is not an active provisioned user in Fortifai Scale. Ask varun@fortifai.io to invite this email first.`
+      });
+    }
+    const role = typeof dbUser.role === "string" && SERVER_ROLE_PRESETS[dbUser.role] ? dbUser.role : "analyst_viewer";
+    const permissions = {
+      ...SERVER_ROLE_PRESETS[role],
+      ...dbUser.permissions || {}
+    };
+    const resetClaims = {
+      email,
+      role,
+      permissions,
+      exp: Date.now() + 60 * 60 * 1e3
+      // 1 hour validity
+    };
+    const resetToken = signSessionToken(resetClaims);
+    const baseUrl = "https://fortifai-crm-git.vercel.app";
+    const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
+    const resendKey = (process.env.RESEND_API_KEY || "").trim();
+    if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
+      return res.status(500).json({
+        ok: false,
+        error: "RESEND_API_KEY is not configured on the server to send password reset emails."
+      });
+    }
+    const resendResp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: "Fortifai Support <support@fortifai.io>",
+        reply_to: "varun@fortifai.io",
+        to: [email],
+        subject: "Fortifai Scale \u2014 Set or Reset Your Password",
+        text: [
+          `Hi ${dbUser.full_name || email.split("@")[0]},`,
+          "",
+          "Click the secure link below to set or reset your Fortifai Scale password (valid for 60 minutes):",
+          setupLink,
+          "",
+          "If you did not request this, you can safely ignore this email.",
+          "",
+          "\u2014 Fortifai Support"
+        ].join("\n")
+      })
+    });
+    const resendJson = await resendResp.json().catch(() => ({}));
+    if (!resendResp.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: resendJson.message || "Failed to send password setup email via Resend."
+      });
+    }
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Password reset request failed";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
 app.post("/api/auth/accept-invite", async (req, res) => {
   try {
     const body = req.body || {};
