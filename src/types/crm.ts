@@ -98,6 +98,10 @@ export interface Contact {
   fortune_500?: boolean;
   expected_close?: Quarter;
   aging_days?: number;
+  created_at?: string;
+  stage_entered_at?: string;
+  stage2_entered_at?: string;
+  stage_history?: Record<string, number>;
   omit_from_pipeline?: boolean;
 
   // Investor & $3M Seed fields

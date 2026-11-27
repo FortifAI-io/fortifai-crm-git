@@ -129,3 +129,57 @@ export const STAGE_PROBABILITY_MAP: Record<string, number> = {
 export function getStageDefaultProbability(stage: string): number {
   return STAGE_PROBABILITY_MAP[stage] ?? 5;
 }
+
+export const STAGE_2_PLUS_SET = new Set([
+  "2 Qualified",
+  "4 Decisionmaker buy in",
+  "5 Internal Review Pending",
+  "6 Commercial / Contracting",
+  "7 Closed Won",
+]);
+
+export function daysBetweenIso(startIso?: string, endMs: number = Date.now()): number {
+  if (!startIso) return 0;
+  const parsed = Date.parse(startIso);
+  if (Number.isNaN(parsed)) return 0;
+  return Math.max(0, Math.floor((endMs - parsed) / 86400000));
+}
+
+export function computeDealVelocity(c: {
+  stage: string;
+  aging_days?: number;
+  created_at?: string;
+  stage_entered_at?: string;
+  stage2_entered_at?: string;
+  stage_history?: Record<string, number>;
+}) {
+  const now = Date.now();
+  const currentStageDays = c.stage_entered_at
+    ? daysBetweenIso(c.stage_entered_at, now)
+    : Math.max(0, c.aging_days || 0);
+
+  const isStage2Plus = STAGE_2_PLUS_SET.has(c.stage);
+  const stage2PlusDays = !isStage2Plus
+    ? 0
+    : c.stage2_entered_at
+    ? daysBetweenIso(c.stage2_entered_at, now)
+    : Math.max(0, c.aging_days || 0);
+
+  const historySum = Object.values(c.stage_history || {}).reduce((s, d) => s + (Number(d) || 0), 0);
+  const totalPipelineDays = c.created_at
+    ? Math.max(daysBetweenIso(c.created_at, now), historySum + currentStageDays)
+    : Math.max(historySum + currentStageDays, stage2PlusDays, c.aging_days || 0);
+
+  const perStageDays: Record<string, number> = { ...(c.stage_history || {}) };
+  if (c.stage && c.stage !== "9 No response") {
+    perStageDays[c.stage] = (perStageDays[c.stage] || 0) + currentStageDays;
+  }
+
+  return {
+    totalPipelineDays,
+    currentStageDays,
+    stage2PlusDays,
+    isStage2Plus,
+    perStageDays,
+  };
+}

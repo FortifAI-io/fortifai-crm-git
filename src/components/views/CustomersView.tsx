@@ -3,6 +3,7 @@ import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles, ChevronDown, Chev
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from "../../utils/crmHelpers";
+import { computeDealVelocity } from "../../utils/crmHelpers";
 import { getStageDefaultProbability } from "../../utils/crmHelpers";
 import {
   ColumnFilterHeader,
@@ -953,6 +954,9 @@ export function CustomersView({
                   selectedValues={closeQtrFilter}
                   onChangeSelectedValues={setCloseQtrFilter}
                 />
+                <th className={`${densityCls.headerCell} whitespace-nowrap`}>
+                  Stage 2+ Days
+                </th>
                 <th className={`${densityCls.headerCell} text-right whitespace-nowrap`}>Actions</th>
               </tr>
             </thead>
@@ -1214,6 +1218,29 @@ export function CustomersView({
                             </option>
                           ))}
                         </select>
+                      </td>
+                      {/* Stage 2+ Days & Total Velocity */}
+                      <td className={`${densityCls.bodyCell} whitespace-nowrap font-mono text-xs`}>
+                        {(() => {
+                          const vel = computeDealVelocity(c);
+                          if (!vel.isStage2Plus) {
+                            return <span className="text-[var(--tx-muted)]">—</span>;
+                          }
+                          return (
+                            <span
+                              title={`Total pipeline: ${vel.totalPipelineDays}d · Current stage: ${vel.currentStageDays}d`}
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                vel.stage2PlusDays > 90
+                                  ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                                  : vel.stage2PlusDays > 45
+                                  ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                                  : "bg-sky-500/15 text-sky-400 border border-sky-500/30"
+                              }`}
+                            >
+                              {vel.stage2PlusDays}d <span className="opacity-70">/ {vel.totalPipelineDays}d tot</span>
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* Actions */}

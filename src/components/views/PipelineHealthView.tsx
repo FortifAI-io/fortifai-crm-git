@@ -791,6 +791,134 @@ export function PipelineHealthView({
         </div>
       </div>
 
+      
+      {/* SECTION 2C: Stage 2+ Deal Distribution — Total & By Owner */}
+      {(() => {
+        const s2Stages = [
+          { key: "2 Qualified", short: "2 Qualified", color: "#38BDF8" },
+          { key: "4 Decisionmaker buy in", short: "4 Decisionmaker", color: "#818CF8" },
+          { key: "5 Internal Review Pending", short: "5 Internal Review", color: "#F59E0B" },
+          { key: "6 Commercial / Contracting", short: "6 Contracting", color: "#A855F7" },
+          { key: "7 Closed Won", short: "7 Closed Won", color: "#10B981" },
+        ];
+        const s2Keys = new Set(s2Stages.map((s) => s.key));
+        const s2Deals = engine.activeDeals.filter((d) => s2Keys.has(d.stage));
+
+        const totalByStageData = s2Stages.map((st) => {
+          const matching = s2Deals.filter((d) => d.stage === st.key);
+          const arrM = Number(
+            (matching.reduce((s, d) => s + (d.amount_usd || 0), 0) / 1_000_000).toFixed(2)
+          );
+          return {
+            stage: st.short,
+            Deals: matching.length,
+            ArrM: arrM,
+          };
+        });
+
+        const ownerNames = Array.from(
+          new Set(s2Deals.map((d) => (d.owner || "Unassigned").split(" ")[0]))
+        );
+        const byOwnerData = ownerNames.map((ownerShort) => {
+          const ownerDeals = s2Deals.filter(
+            (d) => (d.owner || "Unassigned").split(" ")[0] === ownerShort
+          );
+          const row: Record<string, string | number> = {
+            owner: ownerShort,
+            TotalDeals: ownerDeals.length,
+          };
+          for (const st of s2Stages) {
+            row[st.short] = ownerDeals.filter((d) => d.stage === st.key).length;
+          }
+          return row;
+        });
+
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Total Stage 2+ Distribution */}
+            <div className="lg:col-span-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-[var(--tx-primary)]">
+                    Stage 2+ Deal Distribution — Total ({s2Deals.length} Deals)
+                  </h3>
+                  <p className="text-[11px] text-[var(--tx-muted)]">
+                    Deal count and ARR ($M) across qualified &amp; late-stage gates.
+                  </p>
+                </div>
+              </div>
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={totalByStageData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
+                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "#94A3B8" }} allowDecimals={false} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "#94A3B8" }} unit="M" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0F172A",
+                        borderColor: "#334155",
+                        fontSize: "12px",
+                        color: "#F8FAFC",
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: "11.5px" }}
+                      formatter={(val) => <span style={{ color: "#CBD5E1" }}>{val}</span>}
+                    />
+                    <Bar yAxisId="left" dataKey="Deals" name="Deal Count" fill="#38BDF8" radius={[3, 3, 0, 0]} />
+                    <Bar yAxisId="right" dataKey="ArrM" name="Pipeline ARR ($M)" fill="#10B981" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Stage 2+ Distribution By Owner */}
+            <div className="lg:col-span-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-[var(--tx-primary)]">
+                    Stage 2+ Deal Distribution — By Deal Owner
+                  </h3>
+                  <p className="text-[11px] text-[var(--tx-muted)]">
+                    Qualified &amp; late-stage deal ownership split across your sales team.
+                  </p>
+                </div>
+              </div>
+              <div className="h-[220px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={byOwnerData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
+                    <XAxis dataKey="owner" tick={{ fontSize: 11, fill: "#94A3B8" }} />
+                    <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0F172A",
+                        borderColor: "#334155",
+                        fontSize: "12px",
+                        color: "#F8FAFC",
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: "11px" }}
+                      formatter={(val) => <span style={{ color: "#CBD5E1" }}>{val}</span>}
+                    />
+                    {s2Stages.map((st) => (
+                      <Bar
+                        key={st.key}
+                        dataKey={st.short}
+                        stackId="ownerStack"
+                        fill={st.color}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* SECTION 3: Quarterly Coverage Trend Graph & Autonomous Rescue Queue */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <div className="lg:col-span-6 bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg p-4">

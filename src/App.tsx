@@ -1,3 +1,4 @@
+import { STAGE_2_PLUS_SET, daysBetweenIso } from "./utils/crmHelpers";
 import { getStageDefaultProbability } from "./utils/crmHelpers";
 import { loadPipelineRules, savePipelineRules, type PipelineHealthRules } from "./types/pipelineRules";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -326,7 +327,25 @@ function ScaleWorkspace({
       (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
     );
     return applyExplicitCloseQtrs(normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users)).map((c) =>
-      c.contact_type === "customer" ? { ...c, probability: getStageDefaultProbability(c.stage) } : c
+      c.contact_type === "customer"
+        ? {
+            ...c,
+            probability: getStageDefaultProbability(c.stage),
+            created_at:
+              c.created_at ||
+              new Date(Date.now() - Math.max(1, c.aging_days || 14) * 86400000)
+                .toISOString()
+                .slice(0, 10),
+            stage_entered_at:
+              c.stage_entered_at ||
+              new Date(Date.now() - Math.max(0, c.aging_days || 0) * 86400000).toISOString(),
+            stage2_entered_at:
+              c.stage2_entered_at ||
+              (STAGE_2_PLUS_SET.has(c.stage)
+                ? new Date(Date.now() - Math.max(0, c.aging_days || 0) * 86400000).toISOString()
+                : undefined),
+          }
+        : c
     );
   });
   const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>(() =>
