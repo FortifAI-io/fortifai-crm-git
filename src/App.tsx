@@ -393,7 +393,13 @@ function ScaleWorkspace({
     if (typeof window === 'undefined') return true;
     return !window.sessionStorage.getItem('fortifai_scale_authed_email');
   });
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('fortifai_scale_session_token_v1');
+    } catch {
+      return null;
+    }
+  });
   const ACCESS_LOG_STORAGE_KEY = 'fortifai_scale_access_log_id_v1';
   const [currentAccessLogId, setCurrentAccessLogId] = useState<string | null>(() => {
     try {
@@ -554,6 +560,10 @@ function ScaleWorkspace({
         return;
       }
       setActiveTab(nextTab);
+      try {
+        window.scrollTo(0, 0);
+        document.querySelector('main')?.scrollTo({ top: 0, left: 0 });
+      } catch {}
     },
     [perms, showToast]
   );
@@ -625,6 +635,10 @@ function ScaleWorkspace({
           return { ok: false, error: data.error || 'Session authorization failed.' };
         }
         setSessionToken(data.token);
+    try {
+      if (data.token) localStorage.setItem('fortifai_scale_session_token_v1', data.token);
+      else localStorage.removeItem('fortifai_scale_session_token_v1');
+    } catch {}
         return { ok: true, token: data.token };
       } catch {
         return { ok: false, error: 'Unable to reach auth server.' };
@@ -3011,6 +3025,10 @@ function ScaleWorkspace({
           }
           if (directToken) {
             setSessionToken(directToken);
+    try {
+      if (directToken) localStorage.setItem('fortifai_scale_session_token_v1', directToken);
+      else localStorage.removeItem('fortifai_scale_session_token_v1');
+    } catch {}
           } else {
             const res = await issueServerSession(user);
             if (!res.ok) return res;
@@ -3556,24 +3574,24 @@ function ScaleWorkspace({
         )}
 
         
-        {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks' || activeTab === 'access_log') && (
+        {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'benchmarks') && (
           <div
             data-admin-subtabs="true"
-            className="px-6 pt-4 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-2 shrink-0"
+            className="px-6 pt-3 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-1.5 overflow-x-auto shrink-0"
           >
             {(currentUser.role === 'super_admin' ||
               authenticatedUser.email.toLowerCase() === 'varun@fortifai.io') && (
               <button
                 type="button"
                 onClick={() => navigateToTab('settings')}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'settings'
                     ? 'border-sky-400 text-sky-400 bg-sky-500/5'
                     : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
                 }`}
               >
-                <Settings size={14} />
-                <span>Connections, Pipeline Rules &amp; 2-Way Sync</span>
+                <Settings size={13} />
+                <span>Connections &amp; Sync</span>
               </button>
             )}
 
@@ -3581,14 +3599,29 @@ function ScaleWorkspace({
               <button
                 type="button"
                 onClick={() => navigateToTab('admin')}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'admin'
                     ? 'border-sky-400 text-sky-400 bg-sky-500/5'
                     : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
                 }`}
               >
-                <Shield size={14} />
-                <span>Users, Invitations &amp; RBAC</span>
+                <Shield size={13} />
+                <span>Users &amp; RBAC</span>
+              </button>
+            )}
+
+            {currentUser.role === 'super_admin' && (
+              <button
+                type="button"
+                onClick={() => navigateToTab('benchmarks')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                  activeTab === 'benchmarks'
+                    ? 'border-sky-400 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
+                }`}
+              >
+                <Target size={13} />
+                <span>Benchmarks &amp; Targets</span>
               </button>
             )}
 
@@ -3596,13 +3629,13 @@ function ScaleWorkspace({
               <button
                 type="button"
                 onClick={() => navigateToTab('access_log')}
-                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                   activeTab === 'access_log'
                     ? 'border-sky-400 text-sky-400 bg-sky-500/5'
                     : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
                 }`}
               >
-                <Clock size={14} />
+                <Clock size={13} />
                 <span>Access Log</span>
               </button>
             )}

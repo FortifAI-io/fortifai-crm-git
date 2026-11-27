@@ -516,18 +516,6 @@ export function PipelineHealthView({
       </div>
 
       {/* Configure Benchmarks & Formulas Action */}
-      {canConfigureRules && (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onOpenSettingsRules}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-medium bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--tx-primary)] hover:border-sky-400/50 transition-colors"
-          >
-            <Sliders size={12} className="text-sky-400" />
-            Benchmarks &amp; Target Settings
-          </button>
-        </div>
-      )}
       {/* SECTION 2: 3-Horizon Health Cockpit (Full Year 2027 + Next 2 Quarters: Q1 2027 & Q2 2027) */}
       <div className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">

@@ -76,8 +76,17 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
 
   const fetchLogs = useCallback(async () => {
     if (!isSuperAdmin) return;
-    if (!sessionToken) {
-      setError('Waiting for authenticated super_admin session token...');
+    const effectiveToken =
+      sessionToken ||
+      (() => {
+        try {
+          return localStorage.getItem('fortifai_scale_session_token_v1');
+        } catch {
+          return null;
+        }
+      })();
+    if (!effectiveToken) {
+      setError('Please sign out and sign back in once to initialize your super_admin session token.');
       return;
     }
     setLoading(true);
@@ -85,7 +94,7 @@ export function AccessLogView({ currentUser, sessionToken }: AccessLogViewProps)
     try {
       const res = await fetch('/api/admin/access-logs', {
         headers: {
-          Authorization: `Bearer ${sessionToken}`,
+          Authorization: `Bearer ${effectiveToken}`,
         },
       });
       const data = (await res.json()) as {
