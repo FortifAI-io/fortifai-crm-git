@@ -111,14 +111,28 @@ function getFitCategoryValue(c: Contact): string {
 }
 
 
-function getEngagementPriorityRank(c: Contact): number {
+function getEngagementPriorityRank(
+  c: Contact,
+  loggedEmailSet?: Set<string>,
+  loggedIdSet?: Set<string>
+): number {
   const status = (c.delivery_status || "not_sent").toLowerCase();
   if (status === "replied") return 100;
   if (status === "portal_visited" || c.portal_visited) return 90;
   if (status === "opened" || c.email_opened) return 80;
   if (status === "delivered") return 70;
   if (status === "sent" || status === "scheduled") return 60;
-  if (c.stage && c.stage !== "1 Lead" && c.stage !== "9 No response") return 40;
+  if (
+    (c.id && loggedIdSet?.has(c.id)) ||
+    (c.email && loggedEmailSet?.has(c.email.trim().toLowerCase()))
+  ) {
+    return 65;
+  }
+  if (c.stage === "7 Closed Won") return 55;
+  if (c.stage === "6 Commercial / Contracting") return 52;
+  if (c.stage === "5 Internal Review Pending") return 48;
+  if (c.stage === "4 Decisionmaker buy in") return 44;
+  if (c.stage === "2 Qualified") return 40;
   return 0;
 }
 
@@ -351,6 +365,9 @@ export function CustomersView({
         const aTime = a.last_contacted_at ? Date.parse(a.last_contacted_at) || 0 : 0;
         const bTime = b.last_contacted_at ? Date.parse(b.last_contacted_at) || 0 : 0;
         if (bTime !== aTime) return bTime - aTime;
+        const aWtd = (a.amount_usd || 0) * (a.probability || 0);
+        const bWtd = (b.amount_usd || 0) * (b.probability || 0);
+        if (bWtd !== aWtd) return bWtd - aWtd;
         return (b.icp_score || 0) - (a.icp_score || 0);
       });
     }
