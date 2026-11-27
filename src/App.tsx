@@ -180,7 +180,7 @@ const VALID_TABS = new Set<ActiveTab>([
   'settings',
 ]);
 
-function canAccessTab(tab: ActiveTab, perms: UserPermissions): boolean {
+function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): boolean {
   if (tab === 'customer_outreach') {
     return perms.can_view_customers && perms.can_send_campaigns;
   }
@@ -190,13 +190,15 @@ function canAccessTab(tab: ActiveTab, perms: UserPermissions): boolean {
   if (CUSTOMER_TABS.has(tab)) return perms.can_view_customers;
   if (INVESTOR_TABS.has(tab)) return perms.can_view_investors;
   if (tab === 'admin') return perms.can_manage_users;
-  return tab === 'settings';
+  if (tab === 'settings') return role === 'super_admin';
+  return false;
 }
 
-function getDefaultTabForPermissions(perms: UserPermissions): ActiveTab {
+function getDefaultTabForPermissions(perms: UserPermissions, role?: UserRole): ActiveTab {
   if (perms.can_view_customers) return 'customers';
   if (perms.can_view_investors) return 'investors';
-  return 'settings';
+  if (role === 'super_admin') return 'settings';
+  return 'customers';
 }
 
 function parseTabFromLocation(): ActiveTab | null {
@@ -303,10 +305,10 @@ function ScaleWorkspace({
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const requested = parseTabFromLocation();
-    if (requested && canAccessTab(requested, perms)) {
+    if (requested && canAccessTab(requested, perms, currentUser.role)) {
       return requested;
     }
-    return getDefaultTabForPermissions(perms);
+    return getDefaultTabForPermissions(perms, currentUser.role);
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -421,13 +423,15 @@ function ScaleWorkspace({
 
   const navigateToTab = useCallback(
     (nextTab: ActiveTab) => {
-      if (!canAccessTab(nextTab, perms)) {
+      if (!canAccessTab(nextTab, perms, currentUser.role)) {
         const msg = INVESTOR_TABS.has(nextTab)
           ? 'Access denied: requires can_view_investors.'
           : CUSTOMER_TABS.has(nextTab)
           ? 'Access denied: requires can_view_customers.'
           : nextTab === 'admin'
           ? 'Access denied: requires can_manage_users.'
+          : nextTab === 'settings'
+          ? 'Access denied: Connections & Sync is restricted to Super Admin.'
           : 'Access denied for your active RBAC role.';
         showToast(msg);
         return;
@@ -451,10 +455,10 @@ function ScaleWorkspace({
     const handleRouteCheck = () => {
       const requested = parseTabFromLocation();
       if (!requested) return;
-      if (!canAccessTab(requested, perms)) {
-        const fallback = canAccessTab(activeTab, perms)
+      if (!canAccessTab(requested, perms, currentUser.role)) {
+        const fallback = canAccessTab(activeTab, perms, currentUser.role)
           ? activeTab
-          : getDefaultTabForPermissions(perms);
+          : getDefaultTabForPermissions(perms, currentUser.role);
         window.history.replaceState(null, '', `#${fallback}`);
         setActiveTab(fallback);
         showToast(
@@ -2751,8 +2755,8 @@ function ScaleWorkspace({
 
   // Redirect active tab if RBAC revokes access
   useEffect(() => {
-    if (!canAccessTab(activeTab, perms)) {
-      setActiveTab(getDefaultTabForPermissions(perms));
+    if (!canAccessTab(activeTab, perms, currentUser.role)) {
+      setActiveTab(getDefaultTabForPermissions(perms, currentUser.role));
     }
   }, [perms, activeTab]);
 
@@ -3002,7 +3006,8 @@ function ScaleWorkspace({
                 )}
               </button>
             )}
-            <button
+            {currentUser.role === 'super_admin' && (
+<button
               type="button"
               onClick={() => navigateToTab('settings')}
               className={`w-full flex items-center gap-3 px-2.5 py-1.5 rounded-[5px] text-left transition-colors ${
@@ -3027,6 +3032,7 @@ function ScaleWorkspace({
                 </div>
               )}
             </button>
+            )}
           </div>
         </nav>
 
@@ -3157,7 +3163,7 @@ function ScaleWorkspace({
                   section="Header & Sidebar"
                 />
               )}
-              {activeTab === 'settings' && (
+              {activeTab === 'settings' && currentUser.role === 'super_admin' && (
                 <CmsText
                   id="header.title.settings"
                   defaultValue="Supabase, Resend & Portal Integration"
