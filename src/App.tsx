@@ -206,7 +206,8 @@ function parseTabFromLocation(): ActiveTab | null {
   if (typeof window === 'undefined') return null;
   const rawHash = window.location.hash.replace(/^#\/?/, '').trim();
   const queryTab = new URLSearchParams(window.location.search).get('tab')?.trim() || '';
-  const candidate = (rawHash || queryTab) as ActiveTab;
+  const rawCandidate = (rawHash || queryTab) === "pipeline_timeline" ? "pipeline_health" : (rawHash || queryTab);
+  const candidate = rawCandidate as ActiveTab;
   return VALID_TABS.has(candidate) ? candidate : null;
 }
 
@@ -2702,11 +2703,6 @@ function ScaleWorkspace({
               icon: BarChart3,
             },
             {
-              id: 'pipeline_timeline' as ActiveTab,
-              label: 'Pipeline Timeline',
-              icon: CalendarRange,
-            },
-            {
               id: 'customers' as ActiveTab,
               label: 'Accounts & Targets',
               icon: Building2,
@@ -3330,6 +3326,8 @@ function ScaleWorkspace({
               contacts={contacts}
               rules={pipelineRules}
               onOpenSettingsRules={() => navigateToTab("settings")}
+              onUpdateContact={handleUpdateContact}
+              onSelectContact={(id) => setSelectedContactId(id)}
             pipelineAnalytics={pipelineAnalytics}
             arrTarget2027={arrTarget2027}
             onChangeArrTarget={setArrTarget2027}

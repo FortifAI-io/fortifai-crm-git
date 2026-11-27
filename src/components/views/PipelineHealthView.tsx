@@ -43,6 +43,8 @@ interface PipelineHealthViewProps {
   onNavigateToCustomers: () => void;
   onOpenSettingsRules: () => void;
   onDraftFollowUp: (deal: Contact, subject: string, body: string) => void;
+  onUpdateContact: (id: string, updates: Partial<Contact>) => void;
+  onSelectContact: (id: string) => void;
 }
 
 interface FailingMetric {
@@ -67,6 +69,8 @@ export function PipelineHealthView({
   onNavigateToCustomers,
   onOpenSettingsRules,
   onDraftFollowUp,
+  onUpdateContact,
+  onSelectContact,
 }: PipelineHealthViewProps) {
   const { permissions, currentUser } = useRbac();
   const canSendCampaigns = permissions.can_send_campaigns;
@@ -76,6 +80,8 @@ export function PipelineHealthView({
   const [simExtraDeals, setSimExtraDeals] = useState<number>(0);
   const [simRescueStale, setSimRescueStale] = useState<boolean>(false);
   const [showFormulaAudit, setShowFormulaAudit] = useState<boolean>(false);
+  const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
+  const [dragOverQuarter, setDragOverQuarter] = useState<string | null>(null);
 
   const engine = useMemo(() => {
     const activeDeals = contacts.filter(
@@ -689,6 +695,130 @@ export function PipelineHealthView({
                     <span className="text-emerald-400 font-medium">0 SLA breaches</span>
                   )}
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      
+      {/* SECTION 2B: Compressed Interactive Deal Close Timeline Grid (Merged above Trend Graph, Zero KPI/Filter Strips) */}
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-lg overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-[var(--border-subtle)] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-[var(--tx-primary)]">
+              2027 Deal Close Timeline
+            </h3>
+            <span className="text-[11px] font-mono text-[var(--tx-muted)]">
+              · {contacts.filter((c) => c.contact_type === "customer" && !c.omit_from_pipeline && c.stage !== "9 No response").length} active deals
+            </span>
+          </div>
+          <span className="text-[11px] text-[var(--tx-muted)]">
+            Drag any deal across Q1–Q4 to reschedule close &amp; recompute horizon health · Click card for dossier
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--border-subtle)]">
+          {(["Q1 2027", "Q2 2027", "Q3 2027", "Q4 2027"] as const).map((q) => {
+            const qDeals = contacts
+              .filter(
+                (c) =>
+                  c.contact_type === "customer" &&
+                  !c.omit_from_pipeline &&
+                  c.stage !== "9 No response" &&
+                  (c.expected_close || "Q2 2027") === q
+              )
+              .sort((a, b) => (b.amount_usd || 0) - (a.amount_usd || 0));
+            const qTotalArr = qDeals.reduce((s, d) => s + (d.amount_usd || 0), 0);
+            const qWeightedArr = qDeals.reduce((s, d) => {
+              const prob = rules.stageWinProbs[d.stage] ?? d.probability ?? 0;
+              return s + ((d.amount_usd || 0) * prob) / 100;
+            }, 0);
+            const isOver = dragOverQuarter === q;
+
+            return (
+              <div
+                key={q}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (dragOverQuarter !== q) setDragOverQuarter(q);
+                }}
+                onDragLeave={() => {
+                  if (dragOverQuarter === q) setDragOverQuarter(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const dealId = e.dataTransfer.getData("text/plain") || draggedDealId;
+                  setDragOverQuarter(null);
+                  setDraggedDealId(null);
+                  if (dealId) {
+                    onUpdateContact(dealId, { expected_close: q });
+                  }
+                }}
+                className={`p-3 flex flex-col gap-2 min-h-[168px] transition-colors ${
+                  isOver ? "bg-sky-500/10" : "bg-transparent"
+                }`}
+              >
+                <div className="flex items-center justify-between pb-1.5 border-b border-[var(--border-subtle)]">
+                  <div>
+                    <div className="text-[12px] font-semibold text-[var(--tx-primary)]">{q}</div>
+                    <div className="text-[10.5px] font-mono text-[var(--tx-muted)]">
+                      {formatMillions(qTotalArr)} · {formatMillions(qWeightedArr)} wtd
+                    </div>
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[var(--bg-canvas)] border border-[var(--border-subtle)] text-[var(--tx-muted)]">
+                    {qDeals.length} {qDeals.length === 1 ? "deal" : "deals"}
+                  </span>
+                </div>
+
+                {qDeals.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center rounded border border-dashed border-[var(--border-subtle)] text-[11px] text-[var(--tx-muted)] py-6">
+                    Drop deal here
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {qDeals.map((deal) => {
+                      const prob = rules.stageWinProbs[deal.stage] ?? deal.probability ?? 0;
+                      const isStale = (deal.aging_days || 0) > rules.staleSlaDays;
+                      return (
+                        <div
+                          key={deal.id}
+                          draggable
+                          onDragStart={(e) => {
+                            setDraggedDealId(deal.id);
+                            e.dataTransfer.setData("text/plain", deal.id);
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onDragEnd={() => {
+                            setDraggedDealId(null);
+                            setDragOverQuarter(null);
+                          }}
+                          onClick={() => onSelectContact(deal.id)}
+                          className={`p-2 rounded border cursor-grab active:cursor-grabbing transition-colors ${
+                            isStale
+                              ? "bg-rose-500/10 border-rose-500/30 hover:border-rose-400/60"
+                              : "bg-[var(--bg-canvas)]/70 border-[var(--border-subtle)] hover:border-sky-400/50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="text-[12px] font-semibold text-[var(--tx-primary)] truncate">
+                              {deal.organization}
+                            </span>
+                            <span className="text-[11px] font-mono font-semibold text-sky-400 shrink-0">
+                              {formatMillions(deal.amount_usd || 0)}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-1.5 text-[10.5px] text-[var(--tx-muted)]">
+                            <span className="truncate">{deal.stage}</span>
+                            <span className="font-mono shrink-0">
+                              {prob}% · {deal.owner || "Unassigned"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
