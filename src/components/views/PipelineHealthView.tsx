@@ -399,12 +399,7 @@ export function PipelineHealthView({
       {/* SECTION 1: Failing Health Metrics Diagnostic Panel */}
       <div className="bg-[var(--bg-surface)] border border-rose-500/35 rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <ShieldAlert size={15} className="text-rose-400" />
-            <h2 className="text-[13px] font-semibold text-[var(--tx-primary)]">
-              Failing Pipeline Health Metrics ({engine.failingMetrics.length} Breaching Settings Benchmarks)
-            </h2>
-          </div>
+          
           {canConfigureRules && (
             <button
               type="button"
@@ -529,14 +524,14 @@ export function PipelineHealthView({
                       {h.covMult}x wtd ({formatMillions(h.aiWtdArr)} / {formatMillions(h.targetArr)} target)
                     </span>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-slate-800/80 overflow-hidden">
+                  <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
                         h.status === "HEALTHY"
                           ? "bg-emerald-500"
                           : h.status === "AT RISK"
                           ? "bg-amber-500"
-                          : "bg-rose-500"
+                          : "bg-amber-400"
                       }`}
                       style={{ width: `${covPct}%` }}
                     />
@@ -679,7 +674,94 @@ export function PipelineHealthView({
                               {formatMillions(deal.amount_usd || 0)}
                             </span>
                           </div>
-                          <div className="mt-1 flex items-center justify-between gap-1.5 text-[10.5px] text-[var(--tx-muted)]">
+                          {/* Pipeline Distribution by Owner (Total ARR vs Weighted ARR) */}
+      {(() => {
+        const ownerMap = new Map<string, { owner: string; totalArr: number; weightedArr: number; dealCount: number }>();
+        for (const c of contacts) {
+          if (String(c.contact_type || '').toLowerCase() === 'investor') continue;
+          if ((c as any).omit_from_pipeline) continue;
+          const stage = String(c.stage || '').trim();
+          const arr = Number(c.amount_usd ?? 0);
+          if (/^8\b|^9\b|closed lost|no response/i.test(stage)) continue;
+          if (!/^[2-7]\b/.test(stage) && arr <= 0) continue;
+          const prob = /^7\b|closed won/i.test(stage) ? 100 : Number(c.probability ?? 0);
+          const wtd = Math.round((arr * prob) / 100);
+          const ownerName = String(c.owner || 'Unassigned').trim() || 'Unassigned';
+          const cur = ownerMap.get(ownerName) || { owner: ownerName, totalArr: 0, weightedArr: 0, dealCount: 0 };
+          cur.totalArr += arr;
+          cur.weightedArr += wtd;
+          cur.dealCount += 1;
+          ownerMap.set(ownerName, cur);
+        }
+        const rows = Array.from(ownerMap.values()).sort((a, b) => b.totalArr - a.totalArr);
+        const maxVal = Math.max(1, ...rows.map((r) => r.totalArr));
+        if (rows.length === 0) return null;
+
+        return (
+          <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--tx-primary)]">
+                  Pipeline Distribution by Owner — Total ARR vs. Weighted ARR
+                </h3>
+                <p className="text-xs text-[var(--tx-muted)] mt-0.5">
+                  Active Stage 2+ pipeline split by deal owner
+                </p>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-[var(--tx-secondary)]">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-400 inline-block" />
+                  Total ARR
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-sky-400 inline-block" />
+                  Weighted ARR
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3.5">
+              {rows.map((r) => {
+                const totalPct = Math.max(2, Math.round((r.totalArr / maxVal) * 100));
+                const wtdPct = Math.max(2, Math.round((r.weightedArr / maxVal) * 100));
+                return (
+                  <div key={r.owner} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs tabular-nums">
+                      <span className="font-semibold text-[var(--tx-primary)]">
+                        {r.owner}{' '}
+                        <span className="font-normal text-[var(--tx-muted)]">
+                          ({r.dealCount} {r.dealCount === 1 ? 'deal' : 'deals'})
+                        </span>
+                      </span>
+                      <span className="text-[var(--tx-secondary)]">
+                        Total: <strong className="text-indigo-300">{formatMillions(r.totalArr)}</strong>
+                        {' · '}
+                        Weighted: <strong className="text-sky-400">{formatMillions(r.weightedArr)}</strong>
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-indigo-400 transition-all duration-300"
+                          style={{ width: `${totalPct}%` }}
+                        />
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-sky-400 transition-all duration-300"
+                          style={{ width: `${wtdPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      <div className="mt-1 flex items-center justify-between gap-1.5 text-[10.5px] text-[var(--tx-muted)]">
                             <span className="truncate">{deal.stage}</span>
                             <span className="font-mono shrink-0">
                               {prob}% · {deal.owner || "Unassigned"}
