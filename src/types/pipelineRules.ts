@@ -47,11 +47,12 @@ export const DEFAULT_PIPELINE_RULES: PipelineHealthRules = {
   },
   stageWinProbs: {
     "1 Lead": 5,
-    "2 Qualified": 20,
-    "4 Decisionmaker buy in": 40,
+    "2 Qualified": 15,
+    "4 Decisionmaker buy in": 35,
     "5 Internal Review Pending": 60,
-    "6 Commercial / Contracting": 80,
+    "6 Commercial / Contracting": 85,
     "7 Closed Won": 100,
+    "9 No response": 0,
   },
 };
 

@@ -1,3 +1,4 @@
+import { getStageDefaultProbability } from "./utils/crmHelpers";
 import { loadPipelineRules, savePipelineRules, type PipelineHealthRules } from "./types/pipelineRules";
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -324,7 +325,9 @@ function ScaleWorkspace({
     const cleaned = migrated.filter(
       (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
     );
-    return applyExplicitCloseQtrs(normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users));
+    return applyExplicitCloseQtrs(normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users)).map((c) =>
+      c.contact_type === "customer" ? { ...c, probability: getStageDefaultProbability(c.stage) } : c
+    );
   });
   const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>(() =>
     loadLocalState('CUSTOM_FIELDS', INITIAL_CUSTOM_FIELDS)

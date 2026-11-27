@@ -486,3 +486,9 @@ html.dark .recharts-legend-item-text {
 html.dark .recharts-cartesian-axis-tick-value tspan {
   fill: #94A3B8 !important;
 }
+
+/* Unified Inter Typography Across All Controls, Tables & Tabular Numerals */
+body, button, input, select, textarea, table, th, td, .font-mono {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-variant-numeric: tabular-nums;
+}

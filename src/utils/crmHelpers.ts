@@ -115,3 +115,17 @@ export function getRegionBadgeStyle(region: Region): string {
       return 'bg-slate-50 text-slate-600 border-slate-200';
   }
 }
+
+export const STAGE_PROBABILITY_MAP: Record<string, number> = {
+  "1 Lead": 5,
+  "2 Qualified": 15,
+  "4 Decisionmaker buy in": 35,
+  "5 Internal Review Pending": 60,
+  "6 Commercial / Contracting": 85,
+  "7 Closed Won": 100,
+  "9 No response": 0,
+};
+
+export function getStageDefaultProbability(stage: string): number {
+  return STAGE_PROBABILITY_MAP[stage] ?? 5;
+}

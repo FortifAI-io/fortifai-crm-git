@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trash2, BarChart3, Mail, RotateCcw, Search, Sparkles, ChevronDown, ChevronUp, Layers, Target, Users } from "lucide-react";
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
-import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from '../../utils/crmHelpers';
+import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from "../../utils/crmHelpers";
+import { getStageDefaultProbability } from "../../utils/crmHelpers";
 import {
   ColumnFilterHeader,
   type CategoricalOption,
