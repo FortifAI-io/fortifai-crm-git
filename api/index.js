@@ -1745,7 +1745,10 @@ app.post("/api/auth/login", async (req, res) => {
     }
     let dbUser = null;
     try {
-      dbUser = await fetchCrmUserByEmail(email);
+      dbUser = await Promise.race([
+        fetchCrmUserByEmail(email),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2500))
+      ]);
     } catch {
       dbUser = null;
     }
@@ -1777,7 +1780,11 @@ app.post("/api/auth/login", async (req, res) => {
       passwordValid = true;
       if (supabaseAdmin) {
         const initialHash = hashPasswordScrypt(password);
-        await supabaseAdmin.from("crm_users").update({ password_hash: initialHash, last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email);
+        void Promise.race([
+          supabaseAdmin.from("crm_users").update({ password_hash: initialHash, last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
+          new Promise((r) => setTimeout(r, 1500))
+        ]).catch(() => {
+        });
       }
     }
     if (!passwordValid) {
@@ -1787,7 +1794,11 @@ app.post("/api/auth/login", async (req, res) => {
       });
     }
     if (supabaseAdmin && storedHash) {
-      await supabaseAdmin.from("crm_users").update({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email);
+      void Promise.race([
+        supabaseAdmin.from("crm_users").update({ last_login_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("email", email),
+        new Promise((r) => setTimeout(r, 1500))
+      ]).catch(() => {
+      });
     }
     const role = typeof dbUser.role === "string" && SERVER_ROLE_PRESETS[dbUser.role] ? dbUser.role : "analyst_viewer";
     const permissions = {
@@ -1873,7 +1884,18 @@ app.post("/api/auth/session", async (req, res) => {
     });
     return;
   }
-  const dbUser = await fetchCrmUserByEmail(email);
+  let dbUser = null;
+  try {
+    dbUser = await Promise.race([
+      fetchCrmUserByEmail(email),
+      new Promise((resolve) => setTimeout(() => resolve(null), 2500))
+    ]);
+  } catch {
+    dbUser = null;
+  }
+  if (!dbUser && FALLBACK_CRM_USERS[email]) {
+    dbUser = FALLBACK_CRM_USERS[email];
+  }
   if (dbUser && !dbUser.is_active) {
     res.status(403).json({
       ok: false,

@@ -2842,9 +2842,13 @@ function ScaleWorkspace({
         crmUsers={crmUsers}
         supabaseUrl={supabaseUrl}
         supabaseAnonKey={supabaseAnonKey}
-        onAuthenticated={async (user) => {
-          const res = await issueServerSession(user);
-          if (!res.ok) return res;
+        onAuthenticated={async (user, directToken) => {
+          if (directToken) {
+            setSessionToken(directToken);
+          } else {
+            const res = await issueServerSession(user);
+            if (!res.ok) return res;
+          }
           setCrmUsers((prev) => {
             const exists = prev.some((u) => u.email.toLowerCase() === user.email.toLowerCase());
             const updated = exists

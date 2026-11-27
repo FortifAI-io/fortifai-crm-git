@@ -360,7 +360,10 @@ async function startServer() {
 
       let dbUser: Record<string, any> | null = null;
       try {
-        dbUser = await fetchCrmUserByEmail(email);
+        dbUser = await Promise.race([
+          fetchCrmUserByEmail(email),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+        ]);
       } catch {
         dbUser = null;
       }
@@ -402,10 +405,13 @@ async function startServer() {
         passwordValid = true;
         if (supabaseAdmin) {
           const initialHash = hashPasswordScrypt(password);
-          await supabaseAdmin
-            .from("crm_users")
-            .update({ password_hash: initialHash, last_login_at: new Date().toISOString() })
-            .eq("email", email);
+          void Promise.race([
+            supabaseAdmin
+              .from("crm_users")
+              .update({ password_hash: initialHash, last_login_at: new Date().toISOString() })
+              .eq("email", email),
+            new Promise((r) => setTimeout(r, 1500)),
+          ]).catch(() => {});
         }
       }
 
@@ -417,10 +423,13 @@ async function startServer() {
       }
 
       if (supabaseAdmin && storedHash) {
-        await supabaseAdmin
-          .from("crm_users")
-          .update({ last_login_at: new Date().toISOString() })
-          .eq("email", email);
+        void Promise.race([
+          supabaseAdmin
+            .from("crm_users")
+            .update({ last_login_at: new Date().toISOString() })
+            .eq("email", email),
+          new Promise((r) => setTimeout(r, 1500)),
+        ]).catch(() => {});
       }
 
       const role = typeof dbUser.role === "string" && SERVER_ROLE_PRESETS[dbUser.role]
@@ -531,7 +540,18 @@ async function startServer() {
     }
 
     // Authoritative check against Supabase crm_users when configured
-    const dbUser = await fetchCrmUserByEmail(email);
+    let dbUser: Record<string, any> | null = null;
+    try {
+      dbUser = await Promise.race([
+        fetchCrmUserByEmail(email),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+      ]);
+    } catch {
+      dbUser = null;
+    }
+    if (!dbUser && FALLBACK_CRM_USERS[email]) {
+      dbUser = FALLBACK_CRM_USERS[email] as any;
+    }
     if (dbUser && !dbUser.is_active) {
       res.status(403).json({
         ok: false,
