@@ -1164,7 +1164,107 @@ function escapeHtmlBasic(str: string): string {
     }
   });
 
-  app.post('/api/auth/session', async (req: Request, res: Response) => {
+  
+  app.post('/api/auth/logout', async (req: Request, res: Response) => {
+    const body = (req.body || {}) as {
+      accessLogId?: string;
+      email?: string;
+      reason?: string;
+    };
+    const authHeader = req.headers.authorization || '';
+    const claims = authHeader.startsWith('Bearer ')
+      ? verifySessionToken(authHeader.slice(7).trim())
+      : null;
+
+    const accessLogId = typeof body.accessLogId === 'string' ? body.accessLogId.trim() : '';
+    const email = (claims?.email || (typeof body.email === 'string' ? body.email.trim().toLowerCase() : '')).toLowerCase();
+    const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 64) : 'manual_signout';
+    const nowIso = new Date().toISOString();
+
+    const supabaseAdmin = getServiceSupabaseClient();
+    if (supabaseAdmin) {
+      try {
+        if (accessLogId) {
+          await supabaseAdmin
+            .from('user_access_logs')
+            .update({ logout_at: nowIso, logout_reason: reason })
+            .eq('id', accessLogId)
+            .is('logout_at', null);
+        } else if (email && isAllowedDomainEmail(email)) {
+          const { data: latestOpen } = await supabaseAdmin
+            .from('user_access_logs')
+            .select('id')
+            .eq('user_email', email)
+            .is('logout_at', null)
+            .order('login_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestOpen?.id) {
+            await supabaseAdmin
+              .from('user_access_logs')
+              .update({ logout_at: nowIso, logout_reason: reason })
+              .eq('id', latestOpen.id);
+          }
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    res.json({ ok: true, logoutAt: nowIso });
+  });
+
+  app.get('/api/admin/access-logs', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+    const claims = req.session;
+    if (!claims || claims.role !== 'super_admin') {
+      res.status(403).json({
+        ok: false,
+        error: 'Access denied. Only super_admin users can view workspace access logs.',
+      });
+      return;
+    }
+
+    const supabaseAdmin = getServiceSupabaseClient();
+    if (!supabaseAdmin) {
+      res.status(503).json({
+        ok: false,
+        error: 'SUPABASE_SERVICE_ROLE_KEY is not configured on the server.',
+      });
+      return;
+    }
+
+    // Authoritative check in crm_users to ensure caller is still an active super_admin
+    try {
+      const dbCaller = await fetchCrmUserByEmail(claims.email);
+      if (dbCaller && (dbCaller.role !== 'super_admin' || dbCaller.is_active === false)) {
+        res.status(403).json({
+          ok: false,
+          error: 'Access denied. Active super_admin role required.',
+        });
+        return;
+      }
+    } catch {
+      // Fall back to verified JWT claims
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('user_access_logs')
+      .select('id, user_id, user_email, user_name, user_role, login_at, logout_at, logout_reason, ip_address, user_agent')
+      .order('login_at', { ascending: false })
+      .limit(500);
+
+    if (error) {
+      res.status(500).json({
+        ok: false,
+        error: error.message || 'Failed to load user_access_logs from Supabase.',
+      });
+      return;
+    }
+
+    res.json({ ok: true, logs: data || [] });
+  });
+
+app.post('/api/auth/session', async (req: Request, res: Response) => {
     const body = (req.body || {}) as {
       email?: string;
       role?: string;
@@ -1262,7 +1362,36 @@ function escapeHtmlBasic(str: string): string {
     };
 
     const token = signSessionToken(claims);
-    res.json({ ok: true, token, claims });
+    let accessLogId: string | null = null;
+    if (supabaseAdmin) {
+      accessLogId = `alog_${crypto.randomUUID().slice(0, 12)}`;
+      const forwarded = req.headers["x-forwarded-for"];
+      const ipAddress = Array.isArray(forwarded)
+        ? forwarded[0]
+        : typeof forwarded === "string"
+        ? forwarded.split(",")[0].trim()
+        : req.socket?.remoteAddress || null;
+      const userAgent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 300) : null;
+      try {
+        await Promise.race([
+          supabaseAdmin.from("user_access_logs").insert({
+            id: accessLogId,
+            user_id: userPayload.id,
+            user_email: userPayload.email,
+            user_name: userPayload.full_name,
+            user_role: userPayload.role,
+            login_at: new Date().toISOString(),
+            ip_address: ipAddress,
+            user_agent: userAgent,
+          }),
+          new Promise((r) => setTimeout(r, 1500)),
+        ]);
+      } catch {
+        // Non-blocking if table has not been created yet
+      }
+    }
+
+    res.json({ ok: true, token, accessLogId, claims });
   });
 
   app.post('/api/send-batch', requireAuth, async (req: AuthenticatedRequest, res: Response) => {

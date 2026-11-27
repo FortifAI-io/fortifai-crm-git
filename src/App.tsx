@@ -18,6 +18,7 @@ import {
   Sun,
   Send,
   Settings,
+  Clock,
   Shield,
   Sparkles,
   Target,
@@ -80,6 +81,7 @@ import { InvestorsView } from './components/views/InvestorsView';
 import { ComposerView } from './components/views/ComposerView';
 import { TelemetryView } from './components/views/TelemetryView';
 import { AdminRbacView } from './components/views/AdminRbacView';
+import { AccessLogView } from './components/views/AccessLogView';
 import { SettingsView } from './components/views/SettingsView';
 import { ContactDrawer } from './components/ContactDrawer';
 import { AskMeDrawer } from './components/AskMeDrawer';
@@ -181,6 +183,7 @@ const VALID_TABS = new Set<ActiveTab>([
   'investor_telemetry',
   'admin',
   'settings',
+  'access_log',
 ]);
 
 function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): boolean {
@@ -193,7 +196,7 @@ function canAccessTab(tab: ActiveTab, perms: UserPermissions, role?: UserRole): 
   if (CUSTOMER_TABS.has(tab)) return perms.can_view_customers;
   if (INVESTOR_TABS.has(tab)) return perms.can_view_investors;
   if (tab === 'admin') return perms.can_manage_users;
-  if (tab === 'settings') return role === 'super_admin';
+  if (tab === 'settings' || tab === 'access_log') return role === 'super_admin';
   return false;
 }
 
@@ -390,6 +393,53 @@ function ScaleWorkspace({
     return !window.sessionStorage.getItem('fortifai_scale_authed_email');
   });
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const ACCESS_LOG_STORAGE_KEY = 'fortifai_scale_access_log_id_v1';
+  const [currentAccessLogId, setCurrentAccessLogId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('fortifai_scale_access_log_id_v1');
+    } catch {
+      return null;
+    }
+  });
+
+  const recordUserLogout = useCallback(
+    (reason: string = 'manual_signout', keepalive: boolean = false) => {
+      let logId = currentAccessLogId;
+      try {
+        if (!logId) logId = sessionStorage.getItem(ACCESS_LOG_STORAGE_KEY);
+        sessionStorage.removeItem(ACCESS_LOG_STORAGE_KEY);
+      } catch {}
+      setCurrentAccessLogId(null);
+
+      const payload = JSON.stringify({
+        accessLogId: logId || undefined,
+        email: authenticatedUser?.email,
+        reason,
+      });
+
+      try {
+        void fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+          },
+          body: payload,
+          keepalive,
+        }).catch(() => {});
+      } catch {}
+    },
+    [currentAccessLogId, authenticatedUser?.email, sessionToken]
+  );
+
+  useEffect(() => {
+    if (isSignedOut) return;
+    const handleBeforeUnload = () => {
+      recordUserLogout('tab_closed', true);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isSignedOut, recordUserLogout]);
   const [resendConfigured, setResendConfigured] = useState(false);
   const [geminiConfigured, setGeminiConfigured] = useState(false);
 
@@ -2951,7 +3001,13 @@ function ScaleWorkspace({
         crmUsers={crmUsers}
         supabaseUrl={supabaseUrl}
         supabaseAnonKey={supabaseAnonKey}
-        onAuthenticated={async (user, directToken) => {
+        onAuthenticated={async (user, directToken, accessLogId) => {
+          if (accessLogId) {
+            setCurrentAccessLogId(accessLogId);
+            try {
+              sessionStorage.setItem(ACCESS_LOG_STORAGE_KEY, accessLogId);
+            } catch {}
+          }
           if (directToken) {
             setSessionToken(directToken);
           } else {
@@ -3169,14 +3225,14 @@ function ScaleWorkspace({
                   className={`w-full flex items-center ${
                     sidebarCollapsed ? "justify-center px-0 py-2" : "gap-2.5 px-2.5 py-1.5"
                   } rounded-[6px] text-left transition-colors ${
-                    (activeTab === 'settings' || activeTab === 'admin') || activeTab === "settings"
+                    (activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') || activeTab === "settings"
                       ? "bg-[#1B2B44] text-white font-medium"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
                   <Settings
                     size={16}
-                    className={(activeTab === 'settings' || activeTab === 'admin') || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
+                    className={(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') || activeTab === "settings" ? "text-sky-400 shrink-0" : "shrink-0"}
                   />
                   {!sidebarCollapsed && (
                     <span className="text-[12.5px] truncate">
@@ -3259,7 +3315,7 @@ function ScaleWorkspace({
                       onClick={() => {
                         setAccountMenuOpen(false);
                         try { window.sessionStorage.removeItem('fortifai_scale_authed_email'); } catch {}
-    setIsSignedOut(true);
+    (recordUserLogout('manual_signout'), setIsSignedOut(true));
                       }}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 transition-colors text-[12px] font-medium"
                     >
@@ -3356,7 +3412,14 @@ function ScaleWorkspace({
                   section="Header & Sidebar"
                 />
               )}
-              {activeTab === 'settings' && currentUser.role === 'super_admin' && (
+              {activeTab === 'access_log' && currentUser.role === 'super_admin' && (
+            <CmsText
+              id="header.title.access_log"
+              defaultValue="Settings · User Access & Session Audit Log"
+              section="Header & Sidebar"
+            />
+          )}
+          {activeTab === 'settings' && currentUser.role === 'super_admin' && (
                 <CmsText
                   id="header.title.settings"
                   defaultValue="Admin · Connections, Pipeline Rules & 2-Way Sync"
@@ -3473,7 +3536,7 @@ function ScaleWorkspace({
         )}
 
         
-        {(activeTab === 'settings' || activeTab === 'admin') && (
+        {(activeTab === 'settings' || activeTab === 'admin' || activeTab === 'access_log' || activeTab === 'access_log') && (
           <div
             data-admin-subtabs="true"
             className="px-6 pt-4 pb-0 bg-[var(--bg-canvas)] border-b border-[var(--border-subtle)] flex items-center gap-2 shrink-0"
@@ -3506,6 +3569,21 @@ function ScaleWorkspace({
               >
                 <Shield size={14} />
                 <span>Users, Invitations &amp; RBAC</span>
+              </button>
+            )}
+
+            {currentUser.role === 'super_admin' && (
+              <button
+                type="button"
+                onClick={() => navigateToTab('access_log')}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'access_log'
+                    ? 'border-sky-400 text-sky-400 bg-sky-500/5'
+                    : 'border-transparent text-[var(--tx-secondary)] hover:text-[var(--tx-primary)] hover:border-[var(--border-subtle)]'
+                }`}
+              >
+                <Clock size={14} />
+                <span>Access Log</span>
               </button>
             )}
           </div>
@@ -3732,6 +3810,13 @@ function ScaleWorkspace({
             onSimulateWebhook={handleSimulateWebhook}
             onLogInboundReply={handleLogInboundReply}
             onSelectContact={setSelectedContactId}
+          />
+        )}
+
+        {activeTab === 'access_log' && currentUser.role === 'super_admin' && (
+          <AccessLogView
+            currentUser={currentUser}
+            sessionToken={sessionToken}
           />
         )}
 

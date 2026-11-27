@@ -7,7 +7,7 @@ interface AuthGateProps {
   crmUsers: CrmUser[];
   supabaseUrl: string;
   supabaseAnonKey: string;
-  onAuthenticated: (user: CrmUser, token?: string) => Promise<{ ok: boolean; error?: string }>;
+  onAuthenticated: (user: CrmUser, token?: string, accessLogId?: string | null) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export function AuthGate({ onAuthenticated }: AuthGateProps) {
@@ -126,7 +126,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
       try {
         window.history.replaceState({}, document.title, '/' + window.location.hash);
       } catch {}
-      const sessionRes = await onAuthenticated(data.user, data.token);
+      const sessionRes = await onAuthenticated(data.user, data.token, data.accessLogId ?? null);
       if (!sessionRes.ok) {
         setError(sessionRes.error || 'Unable to establish authenticated session.');
       }
@@ -181,7 +181,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
         return;
       }
 
-      const sessionRes = await onAuthenticated(data.user, data.token);
+      const sessionRes = await onAuthenticated(data.user, data.token, data.accessLogId ?? null);
       if (!sessionRes.ok) {
         setError(sessionRes.error || 'Unable to establish authenticated session.');
       }
