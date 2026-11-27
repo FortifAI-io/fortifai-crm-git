@@ -6,6 +6,30 @@
   --bg-subtle: #F8FAFC;
   --bg-hover: #F1F5F9;
   --border: #E5E7EB;
+  --border-subtle: #E5E7EB;
+  --tx-primary: #0F172A;
+  --tx-secondary: #475569;
+  --tx-muted: #64748B;
+}
+html.dark {
+  --bg-canvas: #090F17;
+  --bg-surface: #0F1724;
+  --bg-subtle: #141F30;
+  --bg-hover: #1A283D;
+  --border: #1E2D42;
+  --border-subtle: #1E2D42;
+  --tx-primary: #F1F5F9;
+  --tx-secondary: #CBD5E1;
+  --tx-muted: #94A3B8;
+}
+
+
+:root {
+  --bg-canvas: #F2F4F7;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F8FAFC;
+  --bg-hover: #F1F5F9;
+  --border: #E5E7EB;
   --border-strong: #CBD5E1;
   --tx-primary: #1E293B;
   --tx-secondary: #475569;

@@ -265,7 +265,7 @@ export function PipelineHealthView({
         actualLabel: `${coverageMultActual}x (${formatMillions(totalPipelineArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(requiredPipelineArr)})`,
         gapLabel: `-${formatMillions(coverageGapArr)} (${Math.ceil(coverageGapArr / avgAcvAssumption)} deals)`,
-        rootCause: `${activeDeals.length} active deals in pipeline against ${formatMillions(arrTarget2027)} FY27 quota.`,
+        rootCause: `${activeDeals.length} active deals`,
         recommendedAction: "Qualify top Tier I Fortune 500 accounts into Stage 2+.",
       });
     }
@@ -296,7 +296,7 @@ export function PipelineHealthView({
         actualLabel: `${weightedAttainmentPct}% (${formatMillions(aiRiskAdjustedArr)})`,
         benchmarkLabel: `≥ ${rules.minWeightedAttainmentPct}% of FY27 Target`,
         gapLabel: `-${formatMillions(Math.max(0, arrTarget2027 - aiRiskAdjustedArr))} weighted gap`,
-        rootCause: "Concentration in Stage 2 (20% prob) plus aging SLA discounts.",
+        rootCause: "Heavy Stage 2 mix (20%)",
         recommendedAction: "Advance Stage 2 accounts (Dynatrace, Nokia, Sony) to Decisionmaker buy-in.",
       });
     }
@@ -311,10 +311,7 @@ export function PipelineHealthView({
         actualLabel: `${q1H.covMult}x (${formatMillions(q1H.pipeArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(q1H.reqPipe)})`,
         gapLabel: `-${formatMillions(q1H.gapArr)} (${q1H.dealsNeeded} deals needed)`,
-        rootCause:
-          q1H.activeCount === 0
-            ? "No deals currently assigned to Q1 2027 Close Qtr."
-            : `Only ${q1H.activeCount} deal(s) assigned to Q1 2027.`,
+        rootCause: `${q1H.activeCount} Q1 deals`,
         recommendedAction: "Assign expected Close Qtr on near-term deals in Accounts & Targets.",
       });
     }
@@ -329,10 +326,7 @@ export function PipelineHealthView({
         actualLabel: `${q2H.covMult}x (${formatMillions(q2H.pipeArr)})`,
         benchmarkLabel: `${coverageMultiple}x (${formatMillions(q2H.reqPipe)})`,
         gapLabel: `-${formatMillions(q2H.gapArr)} (${q2H.dealsNeeded} deals needed)`,
-        rootCause:
-          q2H.activeCount === 0
-            ? "No deals currently assigned to Q2 2027 Close Qtr."
-            : `${q2H.activeCount} deal(s) scheduled in Q2 2027.`,
+        rootCause: `${q2H.activeCount} Q2 deals`,
         recommendedAction: "Assign Q2 2027 Close Qtr to active Stage 2–4 opportunities.",
       });
     }
@@ -346,7 +340,7 @@ export function PipelineHealthView({
         actualLabel: `${qualifiedSharePct}%`,
         benchmarkLabel: `≥ ${rules.minQualifiedSharePct}%`,
         gapLabel: `-${rules.minQualifiedSharePct - qualifiedSharePct}% below threshold`,
-        rootCause: "Active pipeline includes unvalidated Stage 1 Lead records.",
+        rootCause: "Unqualified Stage 1 leads",
         recommendedAction: "Validate Stage 1 leads or move dormant records out of active pipeline.",
       });
     }
@@ -520,45 +514,35 @@ export function PipelineHealthView({
           {engine.failingMetrics.map((fm) => (
             <div
               key={fm.id}
-              className="px-4 py-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 hover:bg-[var(--bg-hover)] transition-colors"
+              className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[var(--bg-hover)] transition-colors text-[12.5px]"
             >
-              <div className="space-y-0.5 min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
-                      fm.severity === "critical"
-                        ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                        : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                    }`}
-                  >
-                    {fm.severity === "critical" ? "Failing" : "At Risk"}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                    {fm.horizon}
-                  </span>
-                  <span className="text-[13px] font-semibold text-[var(--tx-primary)]">
-                    {fm.metricName}
-                  </span>
-                </div>
-                <p className="text-[12px] text-[var(--tx-muted)]">
-                  <strong className="text-[var(--tx-primary)] font-medium">Root Cause:</strong> {fm.rootCause}{" "}
-                  <span className="text-sky-400">→ {fm.recommendedAction}</span>
-                </p>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${
+                    fm.severity === "critical"
+                      ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                      : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                  }`}
+                >
+                  {fm.severity === "critical" ? "Failing" : "At Risk"}
+                </span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
+                  {fm.horizon}
+                </span>
+                <span className="font-semibold text-[var(--tx-primary)] truncate">
+                  {fm.metricName}
+                </span>
+                <span className="hidden md:inline text-[11.5px] text-[var(--tx-muted)] truncate">
+                  · {fm.rootCause}
+                </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 shrink-0 text-[12px]">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--tx-muted)]">Actual</div>
-                  <div className="font-semibold tabular-nums text-rose-400">{fm.actualLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--tx-muted)]">Target Rule</div>
-                  <div className="font-medium tabular-nums text-[var(--tx-primary)]">{fm.benchmarkLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--tx-muted)]">Variance</div>
-                  <div className="font-mono text-rose-400">{fm.gapLabel}</div>
-                </div>
+              <div className="flex items-center gap-5 shrink-0 font-mono text-[12px]">
+                <span className="text-rose-400 font-semibold">{fm.actualLabel}</span>
+                <span className="text-[var(--tx-muted)]">Target: {fm.benchmarkLabel}</span>
+                <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 text-[11px]">
+                  {fm.gapLabel}
+                </span>
               </div>
             </div>
           ))}
