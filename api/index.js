@@ -1,4 +1,4 @@
-// _vercel_api_entry.ts
+// vercel_api_entry.ts
 import { createClient as _createSbAdminClient } from "@supabase/supabase-js";
 import crypto2 from "node:crypto";
 import fs from "node:fs";
@@ -1474,7 +1474,7 @@ Return ONLY the compact JSON object (<250 words total).`;
   }
 }
 
-// _vercel_api_entry.ts
+// vercel_api_entry.ts
 function resolveValidSupabaseUrl(...candidates) {
   for (const raw of candidates) {
     const cleaned = String(raw || "").trim().replace(/^['"]|['"]$/g, "");
@@ -1827,6 +1827,67 @@ app.post("/api/auth/login", async (req, res) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Authentication error";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
+app.post("/api/admin/send-invite", async (req, res) => {
+  try {
+    const authHeader = String(req.headers.authorization || "");
+    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    const caller = verifySessionToken(bearer);
+    if (!caller || caller.role !== "super_admin") {
+      return res.status(403).json({ ok: false, error: "Only super_admin can send workspace invites." });
+    }
+    const body = req.body || {};
+    const email = String(body.email || "").trim().toLowerCase();
+    const fullName = String(body.full_name || email.split("@")[0]).trim();
+    const role = String(body.role || "sales_lead").trim();
+    const initialPassword = String(body.initialPassword || "").trim();
+    if (!email || !isAllowedDomainEmail(email)) {
+      return res.status(400).json({ ok: false, error: "Valid @fortifai.io or @tryfortifai.us email required." });
+    }
+    const resendKey = (process.env.RESEND_API_KEY || "").trim();
+    if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
+      return res.status(200).json({ ok: true, mode: "skipped_no_resend_key" });
+    }
+    const loginUrl = "https://fortifai-crm-git.vercel.app";
+    const passwordLine = initialPassword ? `Temporary Password: ${initialPassword}` : "Password: Use the workspace password shared by Varun (you can update it anytime under Users & RBAC).";
+    const textBody = [
+      `Hi ${fullName},`,
+      "",
+      `You have been provisioned on Fortifai Scale (${role}) by ${caller.email}.`,
+      "",
+      `Workspace URL: ${loginUrl}`,
+      `Login Email: ${email}`,
+      passwordLine,
+      "",
+      "Best,",
+      "Fortifai Support"
+    ].join("\n");
+    const resendResp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: "Fortifai Support <support@fortifai.io>",
+        reply_to: "varun@fortifai.io",
+        to: [email],
+        subject: "Welcome to Fortifai Scale \u2014 Workspace Access Provisioned",
+        text: textBody
+      })
+    });
+    const resendJson = await resendResp.json().catch(() => ({}));
+    if (!resendResp.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: resendJson.message || "Resend failed to deliver invite."
+      });
+    }
+    return res.status(200).json({ ok: true, id: resendJson.id });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Invite dispatch error";
     return res.status(500).json({ ok: false, error: msg });
   }
 });

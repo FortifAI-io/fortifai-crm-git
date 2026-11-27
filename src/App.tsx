@@ -2633,7 +2633,32 @@ function ScaleWorkspace({
       const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
       if (client) void upsertCrmUserToSupabase(client, newUser);
     }
-    showToast(`Invited ${newUser.email} (${newUser.role}) to Fortifai Scale`);
+    showToast(`Provisioned ${newUser.email} (${newUser.role}) — sending invite email...`);
+    void (async () => {
+      try {
+        const token = sessionToken || (await refreshCmsSession()) || "";
+        const resp = await fetch("/api/admin/send-invite", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            email: newUser.email,
+            full_name: newUser.full_name,
+            role: newUser.role,
+          }),
+        });
+        const out = (await resp.json()) as { ok?: boolean; error?: string };
+        if (resp.ok && out.ok) {
+          showToast(`Invite email delivered to ${newUser.email} from support@fortifai.io`);
+        } else {
+          showToast(out.error || `Saved ${newUser.email}, but invite email failed to send.`);
+        }
+      } catch {
+        showToast(`Saved ${newUser.email} locally (network error sending invite email).`);
+      }
+    })();
   };
 
   const handleUpdateUserRole = (userId: string, role: UserRole) => {
