@@ -2674,36 +2674,6 @@ function ScaleWorkspace({
   };
 
   
-  const handleResendInvite = useCallback(
-    async (user: CrmUser) => {
-      showToast(`Resending invitation email to ${user.email}...`);
-      try {
-        const token = sessionToken || (await refreshCmsSession()) || '';
-        const resp = await fetch('/api/admin/send-invite', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            email: user.email,
-            full_name: user.full_name,
-            role: user.role,
-            permissions: user.permissions,
-          }),
-        });
-        const out = (await resp.json()) as { ok?: boolean; error?: string };
-        if (resp.ok && out.ok) {
-          showToast(`Invitation email resent to ${user.email} from support@fortifai.io`);
-        } else {
-          showToast(out.error || `Failed to resend invite to ${user.email}`);
-        }
-      } catch {
-        showToast(`Network error resending invite to ${user.email}`);
-      }
-    },
-    [refreshCmsSession, sessionToken, showToast]
-  );
 
   const handleDeleteUser = useCallback(
     async (user: CrmUser) => {
@@ -2923,6 +2893,38 @@ function ScaleWorkspace({
     });
     return res.ok && res.token ? res.token : null;
   }, [authenticatedUser, currentUser.role, isSimulating, issueServerSession, perms, simulatedRole]);
+
+
+  const handleResendInvite = useCallback(
+    async (user: CrmUser) => {
+      showToast(`Resending invitation email to ${user.email}...`);
+      try {
+        const token = sessionToken || (await refreshCmsSession()) || '';
+        const resp = await fetch('/api/admin/send-invite', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            email: user.email,
+            full_name: user.full_name,
+            role: user.role,
+            permissions: user.permissions,
+          }),
+        });
+        const out = (await resp.json()) as { ok?: boolean; error?: string };
+        if (resp.ok && out.ok) {
+          showToast(`Invitation email resent to ${user.email} from support@fortifai.io`);
+        } else {
+          showToast(out.error || `Failed to resend invite to ${user.email}`);
+        }
+      } catch {
+        showToast(`Network error resending invite to ${user.email}`);
+      }
+    },
+    [refreshCmsSession, sessionToken, showToast]
+  );
 
   // Render AuthGate when signed out or active account is deactivated
   if (isSignedOut || !authenticatedUser.is_active) {
