@@ -18,7 +18,8 @@ import { createClient } from "@supabase/supabase-js";
 var cachedAdminClient = null;
 var cachedConfigKey = "";
 function isServiceSupabaseConfigured() {
-  const url = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
+  const rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://xwigfdsvknsgnlrbfshs.supabase.co").trim().replace(/^['"]|['"]$/g, "");
+  const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : rawUrl.includes(".") ? `https://${rawUrl}` : "https://xwigfdsvknsgnlrbfshs.supabase.co";
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
   return Boolean(url && serviceKey && !serviceKey.startsWith("MY_"));
 }
