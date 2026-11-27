@@ -2,6 +2,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/join/:code", "destination": "/index.html" },
     {
       "source": "/api/(.*)",
       "destination": "/api"

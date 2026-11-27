@@ -12,6 +12,8 @@ interface AuthGateProps {
 
 export function AuthGate({ onAuthenticated }: AuthGateProps) {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [invitedRoleLabel, setInvitedRoleLabel] = useState<string | null>(null);
   const [email, setEmail] = useState('varun@fortifai.io');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -55,6 +57,32 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const pathMatch = window.location.pathname.match(/^\/join\/([A-Za-z0-9]{8,32})\/?$/);
+    if (pathMatch) {
+      const code = pathMatch[1];
+      setInviteCode(code);
+      void (async () => {
+        try {
+          const resp = await fetch(`/api/auth/invite-info/${encodeURIComponent(code)}`);
+          const info = (await resp.json().catch(() => ({}))) as {
+            ok?: boolean;
+            email?: string;
+            role?: string;
+            error?: string;
+          };
+          if (resp.ok && info.ok && info.email) {
+            setEmail(info.email.trim().toLowerCase());
+            if (info.role) setInvitedRoleLabel(info.role);
+          } else {
+            setError(info.error || 'This invitation link is invalid or expired.');
+          }
+        } catch {
+          setError('Unable to verify invitation link.');
+        }
+      })();
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const tok = params.get('inviteToken');
     const invitedEmail = params.get('email');
@@ -67,7 +95,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
   const handleAcceptInviteSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!inviteToken) return;
+    if (!inviteCode && !inviteToken) return;
     if (password.length < 8) {
       setError('Please choose a password with at least 8 characters.');
       return;
@@ -82,7 +110,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
       const resp = await fetch('/api/auth/accept-invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inviteToken, newPassword: password }),
+        body: JSON.stringify({ inviteCode: inviteCode || undefined, inviteToken: inviteToken || undefined, newPassword: password }),
       });
       const data = (await resp.json()) as {
         ok?: boolean;
@@ -96,7 +124,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
       }
       // Clean invite query params from URL bar
       try {
-        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+        window.history.replaceState({}, document.title, '/' + window.location.hash);
       } catch {}
       const sessionRes = await onAuthenticated(data.user, data.token);
       if (!sessionRes.ok) {
@@ -175,22 +203,22 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
             <div>
               <h1 className="text-base font-semibold text-slate-100">Fortifai Scale</h1>
               <p className="text-[11px] text-slate-400">
-                {inviteToken ? 'Complete Workspace Invitation' : 'Revenue & Pipeline OS · Restricted Access'}
+                {(inviteCode || inviteToken) ? 'Complete Workspace Invitation' : 'Revenue & Pipeline OS · Restricted Access'}
               </p>
             </div>
           </div>
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium">
             <ShieldCheck size={12} />
-            {inviteToken ? 'Invite Verified' : 'Password + RBAC'}
+            {(inviteCode || inviteToken) ? 'Invite Verified' : 'Password + RBAC'}
           </span>
         </div>
 
-        {inviteToken ? (
+        {(inviteCode || inviteToken) ? (
           <form onSubmit={handleAcceptInviteSubmit} className="p-6 space-y-4 text-xs">
             <div className="p-3 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-200 flex items-start gap-2">
               <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-sky-400" />
               <div>
-                Welcome <strong>{email}</strong>. Create your personal password below to activate your Fortifai Scale account.
+                Welcome <strong>{email}</strong>{invitedRoleLabel ? <> (<strong>{invitedRoleLabel}</strong>)</> : null}. Create your personal password below to activate your Fortifai Scale (Beta) account.
               </div>
             </div>
 
@@ -270,7 +298,7 @@ export function AuthGate({ onAuthenticated }: AuthGateProps) {
             <button
               type="button"
               onClick={() => {
-                setInviteToken(null);
+                setInviteCode(null); setInviteToken(null);
                 setError(null);
               }}
               className="w-full text-center text-[11px] text-slate-400 hover:text-slate-200"

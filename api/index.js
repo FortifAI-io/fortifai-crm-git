@@ -1825,6 +1825,31 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(500).json({ ok: false, error: msg });
   }
 });
+function formatAllocatedRole(rawRole) {
+  const map = {
+    super_admin: "Super Admin",
+    admin: "Admin",
+    marketing: "Marketing",
+    sales_lead: "Sales Lead",
+    investor_relations: "Investor Relations",
+    analyst_viewer: "Analyst Viewer"
+  };
+  const key = String(rawRole || "").trim().toLowerCase();
+  if (map[key]) return map[key];
+  return key.split("_").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || "Member";
+}
+function generateOpaqueJoinCode(length = 16) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = crypto2.randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+function escapeHtmlBasic(str) {
+  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 app.post("/api/admin/send-invite", async (req, res) => {
   try {
     const authHeader = String(req.headers.authorization || "");
@@ -1836,11 +1861,15 @@ app.post("/api/admin/send-invite", async (req, res) => {
     const body = req.body || {};
     const email = String(body.email || "").trim().toLowerCase();
     const fullName = String(body.full_name || email.split("@")[0]).trim();
+    const firstName = fullName.split(/\s+/)[0] || email.split("@")[0];
     const role = String(body.role || "sales_lead").trim();
+    const allocatedRoleLabel = formatAllocatedRole(role);
     const initialPassword = String(body.initialPassword || "").trim();
     if (!email || !isAllowedDomainEmail(email)) {
       return res.status(400).json({ ok: false, error: "Valid @fortifai.io or @tryfortifai.us email required." });
     }
+    const inviteCode = generateOpaqueJoinCode(16);
+    const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3).toISOString();
     const sbAdmin = getSupabaseAdmin();
     if (sbAdmin) {
       const upsertRow = {
@@ -1848,45 +1877,83 @@ app.post("/api/admin/send-invite", async (req, res) => {
         full_name: fullName,
         sender_display_name: fullName,
         role,
-        is_active: true
+        is_active: true,
+        invite_code: inviteCode,
+        invite_expires_at: inviteExpiresAt
       };
       if (body.permissions) upsertRow.permissions = body.permissions;
       if (initialPassword.length >= 8) {
         upsertRow.password_hash = hashPasswordScrypt(initialPassword);
       }
-      await sbAdmin.from("crm_users").upsert(upsertRow, { onConflict: "email" });
+      const { error: upsertErr } = await sbAdmin.from("crm_users").upsert(upsertRow, { onConflict: "email" });
+      if (upsertErr) {
+        delete upsertRow.invite_code;
+        delete upsertRow.invite_expires_at;
+        await sbAdmin.from("crm_users").upsert(upsertRow, { onConflict: "email" });
+      }
     }
-    const inviteClaims = {
-      email,
-      role,
-      permissions: {
-        ...SERVER_ROLE_PRESETS[role] || SERVER_ROLE_PRESETS.sales_lead,
-        ...body.permissions || {}
-      },
-      exp: Date.now() + 7 * 24 * 60 * 60 * 1e3
-    };
-    const inviteToken = signSessionToken(inviteClaims);
     const baseUrl = (process.env.APP_URL || "https://scale.fortifai.io").trim().replace(/\/+$/, "");
-    const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(inviteToken)}&email=${encodeURIComponent(email)}`;
+    const setupLink = `${baseUrl}/join/${inviteCode}`;
     const resendKey = (process.env.RESEND_API_KEY || "").trim();
     if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
       return res.status(200).json({ ok: true, mode: "skipped_no_resend_key", setupLink });
     }
     const textBody = [
-      `Hi ${fullName},`,
+      "Join Fortifai Scale (Beta)",
       "",
-      `You have been invited to Fortifai Scale (${role}) by ${caller.email}.`,
+      `Hi ${firstName},`,
       "",
-      "Click the secure link below to set your personal workspace password and sign in (link valid for 7 days):",
+      "Fortifai Marketing has invited you to join Fortifai Scale (Beta), our in-house Customer Relationship Management portal.",
+      `- Your Login Email: ${email}`,
+      `- Your Allocated Role: ${allocatedRoleLabel}`,
+      "",
+      `Activate Account & Set Password \u2192 (Join Now): ${setupLink}`,
+      "",
+      "Or use this direct link (valid for 7 days):",
       setupLink,
       "",
-      `Workspace URL: ${baseUrl}`,
-      `Login Email: ${email}`,
-      ...initialPassword ? [`Temporary Password (optional): ${initialPassword}`] : [],
-      "",
-      "Best,",
-      "Fortifai Support"
+      "\u2014 Fortifai Marketing Team"
     ].join("\n");
+    const htmlBody = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:24px;background-color:#090F17;font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',Roboto,sans-serif;color:#E2E8F0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:540px;margin:0 auto;background-color:#0F1724;border:1px solid #1E2D42;border-radius:12px;overflow:hidden;">
+      <tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #1E2D42;">
+          <div style="font-size:18px;font-weight:700;color:#F8FAFC;letter-spacing:-0.01em;">
+            Join Fortifai Scale (Beta)
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 28px;font-size:14px;line-height:1.6;color:#CBD5E1;">
+          <p style="margin:0 0 14px 0;color:#F8FAFC;">Hi ${escapeHtmlBasic(firstName)},</p>
+          <p style="margin:0 0 16px 0;">
+            Fortifai Marketing has invited you to join <strong style="color:#F8FAFC;">Fortifai Scale (Beta)</strong>, our in-house Customer Relationship Management portal.
+          </p>
+          <ul style="margin:0 0 22px 0;padding-left:18px;color:#E2E8F0;">
+            <li style="margin-bottom:6px;"><strong>Your Login Email:</strong> <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#38BDF8;">${escapeHtmlBasic(email)}</span></li>
+            <li><strong>Your Allocated Role:</strong> ${escapeHtmlBasic(allocatedRoleLabel)}</li>
+          </ul>
+          <div style="margin:0 0 22px 0;">
+            <a href="${setupLink}" style="display:inline-block;padding:12px 20px;background-color:#38BDF8;color:#090F17;font-size:13px;font-weight:700;text-decoration:none;border-radius:8px;">
+              Activate Account &amp; Set Password &rarr; (Join Now)
+            </a>
+          </div>
+          <p style="margin:0 0 6px 0;font-size:12px;color:#94A3B8;">
+            Or use this direct link (valid for 7 days):
+          </p>
+          <p style="margin:0 0 22px 0;font-size:12px;word-break:break-all;">
+            <a href="${setupLink}" style="color:#38BDF8;text-decoration:underline;">${setupLink}</a>
+          </p>
+          <p style="margin:0;font-size:13px;color:#94A3B8;">
+            &mdash; Fortifai Marketing Team
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
     const resendResp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -1897,8 +1964,9 @@ app.post("/api/admin/send-invite", async (req, res) => {
         from: "Fortifai Support <support@fortifai.io>",
         reply_to: "varun@fortifai.io",
         to: [email],
-        subject: "You're invited to Fortifai Scale \u2014 Set Your Password",
-        text: textBody
+        subject: "Your Fortifai Scale workspace invite",
+        text: textBody,
+        html: htmlBody
       })
     });
     const resendJson = await resendResp.json().catch(() => ({}));
@@ -1911,6 +1979,40 @@ app.post("/api/admin/send-invite", async (req, res) => {
     return res.status(200).json({ ok: true, id: resendJson.id, setupLink });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Invite dispatch error";
+    return res.status(500).json({ ok: false, error: msg });
+  }
+});
+app.get("/api/auth/invite-info/:code", async (req, res) => {
+  try {
+    const code = String(req.params.code || "").trim();
+    if (!code || !/^[A-Za-z0-9]{8,32}$/.test(code)) {
+      return res.status(400).json({ ok: false, error: "Invalid invitation code format." });
+    }
+    const sbAdmin = getSupabaseAdmin();
+    if (!sbAdmin) {
+      return res.status(500).json({ ok: false, error: "Supabase admin client unavailable." });
+    }
+    const { data: userRow, error } = await sbAdmin.from("crm_users").select("email, full_name, role, is_active, invite_expires_at").eq("invite_code", code).maybeSingle();
+    if (error || !userRow || userRow.is_active === false) {
+      return res.status(404).json({
+        ok: false,
+        error: "This invitation link has already been used or is invalid. Ask your admin to click Resend Invite."
+      });
+    }
+    if (userRow.invite_expires_at && new Date(userRow.invite_expires_at).getTime() < Date.now()) {
+      return res.status(410).json({
+        ok: false,
+        error: "This 7-day invitation link has expired. Ask your admin to click Resend Invite."
+      });
+    }
+    return res.status(200).json({
+      ok: true,
+      email: userRow.email,
+      full_name: userRow.full_name,
+      role: formatAllocatedRole(userRow.role)
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to verify invite code";
     return res.status(500).json({ ok: false, error: msg });
   }
 });
@@ -1946,16 +2048,23 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       ...SERVER_ROLE_PRESETS[role],
       ...dbUser.permissions || {}
     };
+    const inviteCode = generateOpaqueJoinCode(16);
+    const inviteExpiresAt = new Date(Date.now() + 60 * 60 * 1e3).toISOString();
+    const sbAdmin = getSupabaseAdmin();
+    let useCodeLink = false;
+    if (sbAdmin) {
+      const { error: codeErr } = await sbAdmin.from("crm_users").update({ invite_code: inviteCode, invite_expires_at: inviteExpiresAt }).eq("email", email);
+      if (!codeErr) useCodeLink = true;
+    }
     const resetClaims = {
       email,
       role,
       permissions,
       exp: Date.now() + 60 * 60 * 1e3
-      // 1 hour validity
     };
     const resetToken = signSessionToken(resetClaims);
     const baseUrl = (process.env.APP_URL || "https://scale.fortifai.io").trim().replace(/\/+$/, "");
-    const setupLink = `${baseUrl}/?inviteToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
+    const setupLink = useCodeLink ? `${baseUrl}/join/${inviteCode}` : `${baseUrl}/?inviteToken=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
     const resendKey = (process.env.RESEND_API_KEY || "").trim();
     if (!resendKey || resendKey === "MY_RESEND_API_KEY") {
       return res.status(500).json({
@@ -1975,14 +2084,12 @@ app.post("/api/auth/forgot-password", async (req, res) => {
         to: [email],
         subject: "Fortifai Scale \u2014 Set or Reset Your Password",
         text: [
-          `Hi ${dbUser.full_name || email.split("@")[0]},`,
+          `Hi ${(dbUser.full_name || email.split("@")[0]).split(/\s+/)[0]},`,
           "",
-          "Click the secure link below to set or reset your Fortifai Scale password (valid for 60 minutes):",
+          "Click the link below to set or reset your Fortifai Scale password (valid for 60 minutes):",
           setupLink,
           "",
-          "If you did not request this, you can safely ignore this email.",
-          "",
-          "\u2014 Fortifai Support"
+          "\u2014 Fortifai Marketing Team"
         ].join("\n")
       })
     });
@@ -2002,44 +2109,88 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 app.post("/api/auth/accept-invite", async (req, res) => {
   try {
     const body = req.body || {};
+    const inviteCode = String(body.inviteCode || "").trim();
     const inviteToken = String(body.inviteToken || "").trim();
     const newPassword = String(body.newPassword || "");
-    const claims = verifySessionToken(inviteToken);
-    if (!claims || !isAllowedDomainEmail(claims.email)) {
-      return res.status(401).json({
-        ok: false,
-        error: "This invitation link is invalid or expired. Ask Varun to click Resend Invite."
-      });
-    }
     if (newPassword.length < 8) {
       return res.status(400).json({
         ok: false,
         error: "Choose a password with at least 8 characters."
       });
     }
-    const newHash = hashPasswordScrypt(newPassword);
     const sbAdmin = getSupabaseAdmin();
-    let dbUser = null;
+    let targetEmail = "";
+    let targetRole = "sales_lead";
+    let targetPermissions = { ...SERVER_ROLE_PRESETS.sales_lead };
+    let existingUserRow = null;
+    if (inviteCode) {
+      if (!sbAdmin) {
+        return res.status(500).json({ ok: false, error: "Supabase admin client unavailable." });
+      }
+      const { data: row, error } = await sbAdmin.from("crm_users").select("*").eq("invite_code", inviteCode).maybeSingle();
+      if (error || !row || row.is_active === false) {
+        return res.status(401).json({
+          ok: false,
+          error: "This invitation link is invalid or already used. Ask your admin to resend your invite."
+        });
+      }
+      if (row.invite_expires_at && new Date(row.invite_expires_at).getTime() < Date.now()) {
+        return res.status(401).json({
+          ok: false,
+          error: "This invitation link has expired. Ask your admin to resend your invite."
+        });
+      }
+      existingUserRow = row;
+      targetEmail = String(row.email || "").trim().toLowerCase();
+      targetRole = typeof row.role === "string" && SERVER_ROLE_PRESETS[row.role] ? row.role : "sales_lead";
+      targetPermissions = {
+        ...SERVER_ROLE_PRESETS[targetRole],
+        ...row.permissions || {}
+      };
+    } else {
+      const claims = verifySessionToken(inviteToken);
+      if (!claims || !isAllowedDomainEmail(claims.email)) {
+        return res.status(401).json({
+          ok: false,
+          error: "This invitation link is invalid or expired. Ask your admin to click Resend Invite."
+        });
+      }
+      targetEmail = claims.email;
+      targetRole = claims.role;
+      targetPermissions = claims.permissions;
+    }
+    if (!targetEmail || !isAllowedDomainEmail(targetEmail)) {
+      return res.status(401).json({ ok: false, error: "Unauthorized workspace domain." });
+    }
+    const newHash = hashPasswordScrypt(newPassword);
+    let dbUser = existingUserRow;
     if (sbAdmin) {
-      const { data } = await sbAdmin.from("crm_users").upsert(
-        {
-          email: claims.email,
-          full_name: claims.email.split("@")[0],
-          sender_display_name: claims.email.split("@")[0],
-          role: claims.role,
-          permissions: claims.permissions,
-          is_active: true,
-          password_hash: newHash,
-          last_login_at: (/* @__PURE__ */ new Date()).toISOString()
-        },
-        { onConflict: "email" }
-      ).select("*").single();
-      dbUser = data || null;
+      const updatePayload = {
+        email: targetEmail,
+        full_name: existingUserRow?.full_name || targetEmail.split("@")[0],
+        sender_display_name: existingUserRow?.sender_display_name || existingUserRow?.full_name || targetEmail.split("@")[0],
+        role: targetRole,
+        permissions: targetPermissions,
+        is_active: true,
+        password_hash: newHash,
+        last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+        invite_code: null,
+        invite_expires_at: null
+      };
+      const { data, error: upErr } = await sbAdmin.from("crm_users").upsert(updatePayload, { onConflict: "email" }).select("*").single();
+      if (upErr) {
+        delete updatePayload.invite_code;
+        delete updatePayload.invite_expires_at;
+        const fallback = await sbAdmin.from("crm_users").upsert(updatePayload, { onConflict: "email" }).select("*").single();
+        dbUser = fallback.data || existingUserRow;
+      } else {
+        dbUser = data || existingUserRow;
+      }
     }
     const sessionClaims = {
-      email: claims.email,
-      role: claims.role,
-      permissions: claims.permissions,
+      email: targetEmail,
+      role: targetRole,
+      permissions: targetPermissions,
       exp: Date.now() + 12 * 60 * 60 * 1e3
     };
     const token = signSessionToken(sessionClaims);
@@ -2047,56 +2198,17 @@ app.post("/api/auth/accept-invite", async (req, res) => {
       ok: true,
       token,
       user: {
-        id: dbUser?.id || `usr_${claims.email}`,
-        email: claims.email,
-        full_name: dbUser?.full_name || claims.email.split("@")[0],
-        sender_display_name: dbUser?.sender_display_name || dbUser?.full_name || claims.email.split("@")[0],
-        role: claims.role,
-        permissions: claims.permissions,
+        id: dbUser?.id || `usr_${targetEmail}`,
+        email: targetEmail,
+        full_name: dbUser?.full_name || targetEmail.split("@")[0],
+        sender_display_name: dbUser?.sender_display_name || dbUser?.full_name || targetEmail.split("@")[0],
+        role: targetRole,
+        permissions: targetPermissions,
         is_active: true
       }
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to complete invite setup";
-    return res.status(500).json({ ok: false, error: msg });
-  }
-});
-app.post("/api/admin/purge-stale-users", async (req, res) => {
-  try {
-    const authHeader = String(req.headers.authorization || "");
-    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-    const caller = verifySessionToken(bearer);
-    if (!caller || caller.role !== "super_admin") {
-      return res.status(403).json({ ok: false, error: "Only super_admin can purge users." });
-    }
-    const keepOnlyVarun = Boolean((req.body || {}).keepOnlyVarun);
-    const staleEmails = [
-      "mike@fortifai.io",
-      "dave@fortifai.io",
-      "arun@fortifai.io",
-      "chandra@fortifai.io",
-      "alex@fortifai.io",
-      "sarah@fortifai.io"
-    ];
-    const sbAdmin = getSupabaseAdmin();
-    if (sbAdmin) {
-      if (keepOnlyVarun) {
-        try {
-          await sbAdmin.from("opportunities").update({ owner_id: null, owner_email: "varun@fortifai.io" }).neq("owner_email", "varun@fortifai.io");
-        } catch {
-        }
-        await sbAdmin.from("crm_users").delete().neq("email", "varun@fortifai.io");
-      } else {
-        try {
-          await sbAdmin.from("opportunities").update({ owner_id: null, owner_email: "varun@fortifai.io" }).in("owner_email", staleEmails);
-        } catch {
-        }
-        await sbAdmin.from("crm_users").delete().in("email", staleEmails);
-      }
-    }
-    return res.status(200).json({ ok: true, keepOnlyVarun });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Purge failed";
     return res.status(500).json({ ok: false, error: msg });
   }
 });
