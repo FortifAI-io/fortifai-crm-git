@@ -499,6 +499,113 @@ function escapeHtmlBasic(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+  
+  app.post("/api/crm/upsert-contact", async (req: Request, res: Response) => {
+    try {
+      const authHeader = String(req.headers.authorization || "");
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const caller = verifySessionToken(bearer);
+      if (!caller) {
+        return res.status(401).json({ ok: false, error: "Unauthorized session." });
+      }
+
+      const contact = (req.body || {}).contact as Record<string, any> | undefined;
+      if (!contact) {
+        return res.status(400).json({ ok: false, error: "Contact payload required." });
+      }
+
+      const sbAdmin = getSupabaseAdmin();
+      if (!sbAdmin) {
+        return res.status(500).json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY missing on server." });
+      }
+
+      const email = String(contact.email || "").trim().toLowerCase() ||
+        `pending.${String(contact.organization || contact.id || Date.now()).toLowerCase().replace(/[^a-z0-9]+/g, "-")}@pipeline.fortifai.local`;
+
+      const contactRow: Record<string, any> = {
+        email,
+        first_name: contact.first_name ?? null,
+        last_name: contact.last_name ?? null,
+        full_name: contact.full_name ?? null,
+        organization: contact.organization ?? null,
+        title: contact.title ?? null,
+        region: contact.region ?? "US",
+        location: contact.location ?? null,
+        contact_type: contact.contact_type ?? "customer",
+        buyer_persona: contact.buyer_persona ?? null,
+        industry: contact.industry ?? null,
+        tier: contact.tier ?? null,
+        icp_score: contact.icp_score ?? null,
+        fortune_500: Boolean(contact.fortune_500),
+        owner: contact.owner ?? "Varun",
+        relationship_strength: contact.relationship_strength ?? null,
+        tags: Array.isArray(contact.tags) ? contact.tags : [],
+        unsubscribed: Boolean(contact.unsubscribed),
+        custom_fields: contact.custom_fields ?? {},
+      };
+
+      const { data: savedContact, error: cErr } = await sbAdmin
+        .from("contacts")
+        .upsert(contactRow, { onConflict: "email" })
+        .select("*")
+        .single();
+
+      if (cErr) {
+        return res.status(502).json({ ok: false, error: cErr.message });
+      }
+
+      if (savedContact?.id) {
+        const oppRow: Record<string, any> = {
+          contact_id: savedContact.id,
+          opportunity_type: savedContact.contact_type === "investor" ? "seed_investment" : "enterprise_deal",
+          stage: contact.stage || "1 Lead",
+          outcome: contact.outcome ?? null,
+          meeting_booked: Boolean(contact.meeting_booked),
+          product_or_instrument: contact.product_or_instrument ?? null,
+          amount_usd: Number(contact.amount_usd ?? 0),
+          probability: Number(contact.probability ?? 0),
+          expected_close: contact.expected_close ?? null,
+          next_step: contact.next_step ?? null,
+          notes: contact.notes ?? null,
+          owner_email: contact.owner_email || "varun@fortifai.io",
+          updated_at: new Date().toISOString(),
+        };
+        const { error: oErr } = await sbAdmin
+          .from("opportunities")
+          .upsert(oppRow, { onConflict: "contact_id" });
+        if (oErr) {
+          return res.status(502).json({ ok: false, error: "opportunities: " + oErr.message });
+        }
+      }
+
+      return res.status(200).json({ ok: true, contact: savedContact });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Contact upsert failed";
+      return res.status(500).json({ ok: false, error: msg });
+    }
+  });
+
+  app.post("/api/crm/delete-contact", async (req: Request, res: Response) => {
+    try {
+      const authHeader = String(req.headers.authorization || "");
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const caller = verifySessionToken(bearer);
+      if (!caller) {
+        return res.status(401).json({ ok: false, error: "Unauthorized session." });
+      }
+      const email = String((req.body || {}).email || "").trim().toLowerCase();
+      if (!email) return res.status(200).json({ ok: true });
+      const sbAdmin = getSupabaseAdmin();
+      if (sbAdmin) {
+        await sbAdmin.from("contacts").delete().eq("email", email);
+      }
+      return res.status(200).json({ ok: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Delete failed";
+      return res.status(500).json({ ok: false, error: msg });
+    }
+  });
+
   app.post("/api/admin/send-invite", async (req: Request, res: Response) => {
     try {
       const authHeader = String(req.headers.authorization || "");

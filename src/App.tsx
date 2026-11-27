@@ -312,6 +312,7 @@ function ScaleWorkspace({
     exitSimulation,
   } = useRbac();
 
+  const contactsLatestRef = useRef<Contact[]>([]);
   const [contacts, setContacts] = useState<Contact[]>(() => {
     try { localStorage.removeItem("fortifai_crm_contacts_v2"); } catch {}
     const users = normalizeCrmUsers(loadLocalState("USERS", INITIAL_CRM_USERS));
@@ -638,6 +639,7 @@ function ScaleWorkspace({
   }, [crmUsers]);
 
   useEffect(() => {
+    contactsLatestRef.current = contacts;
     saveLocalState('CONTACTS', contacts);
   }, [contacts]);
 
@@ -1665,6 +1667,9 @@ function ScaleWorkspace({
   };
 
   const handleAddContact = (newContact: Omit<Contact, 'id'>) => {
+    if (newContact && typeof newContact === 'object') {
+      void persistContactToServer(newContact as Contact);
+    }
     const canAdd =
       newContact.contact_type === 'investor' ? perms.can_edit_investors : perms.can_edit_customers;
     if (!canAdd) {
