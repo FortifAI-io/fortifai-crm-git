@@ -272,6 +272,29 @@ interface ScaleWorkspaceProps {
   setAuthenticatedUserId: React.Dispatch<React.SetStateAction<string>>;
 }
 
+
+function getExplicitCloseQtrMap(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem("fortifai_explicit_close_qtrs_v1") || "{}");
+  } catch {
+    return {};
+  }
+}
+function setExplicitCloseQtr(id: string, qtr: string) {
+  try {
+    const map = getExplicitCloseQtrMap();
+    if (qtr) map[id] = qtr;
+    else delete map[id];
+    localStorage.setItem("fortifai_explicit_close_qtrs_v1", JSON.stringify(map));
+  } catch {}
+}
+function applyExplicitCloseQtrs(list: Contact[]): Contact[] {
+  const map = getExplicitCloseQtrMap();
+  return list.map((c) =>
+    c.contact_type === "customer" ? { ...c, expected_close: map[c.id] || "" } : c
+  );
+}
+
 function ScaleWorkspace({
   crmUsers,
   setCrmUsers,
@@ -301,7 +324,7 @@ function ScaleWorkspace({
     const cleaned = migrated.filter(
       (c) => !["alice@honeywell.com", "bob@nokia.com"].includes((c.email || "").toLowerCase())
     );
-    return normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users);
+    return applyExplicitCloseQtrs(normalizeContacts(cleaned.length > 50 ? cleaned : INITIAL_CONTACTS, users));
   });
   const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>(() =>
     loadLocalState('CUSTOM_FIELDS', INITIAL_CUSTOM_FIELDS)
@@ -606,7 +629,7 @@ function ScaleWorkspace({
         res.users && res.users.length > 0 ? normalizeCrmUsers(res.users) : null;
       if (normalizedUsers) setCrmUsers(normalizedUsers);
       if (res.contacts && res.contacts.length > 0) {
-        setContacts(normalizeContacts(res.contacts, normalizedUsers || crmUsers));
+        setContacts(applyExplicitCloseQtrs(normalizeContacts(res.contacts, normalizedUsers || crmUsers)));
       }
       if (res.customFields && res.customFields.length > 0) setCustomFields(res.customFields);
       if (res.telemetry && res.telemetry.length > 0) setTelemetry(res.telemetry);
@@ -2691,7 +2714,7 @@ function ScaleWorkspace({
         res.users && res.users.length > 0 ? normalizeCrmUsers(res.users) : crmUsers;
       if (res.users && res.users.length > 0) setCrmUsers(normalizedUsers);
       if (res.contacts && res.contacts.length > 0) {
-        setContacts(normalizeContacts(res.contacts, normalizedUsers));
+        setContacts(applyExplicitCloseQtrs(normalizeContacts(res.contacts, normalizedUsers)));
       }
       if (res.customFields && res.customFields.length > 0) setCustomFields(res.customFields);
       if (res.telemetry && res.telemetry.length > 0) setTelemetry(res.telemetry);
