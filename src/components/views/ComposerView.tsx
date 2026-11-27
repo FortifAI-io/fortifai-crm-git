@@ -22,6 +22,7 @@ import {
   User,
   UserCheck,
   Users,
+  XCircle,
 } from 'lucide-react';
 import type {
   Contact,
@@ -440,6 +441,38 @@ export function ComposerView({
     return [...fromTelemetry, ...fromContacts];
   }, [telemetry, domainRecipients, sendFrom]);
 
+  const handleCancelSequence = () => {
+    const hasProgress =
+      selectedIds.length > 0 ||
+      Object.keys(aiHooksById).length > 0 ||
+      Object.keys(vipBodyOverrides).length > 0 ||
+      step > 1;
+    if (
+      hasProgress &&
+      !window.confirm("Cancel the current outreach sequence? This will clear selected recipients, AI hooks, and reset the draft.")
+    ) {
+      return;
+    }
+    onChangeSelectedIds([]);
+    onChangePreviewIdx(0);
+    setActivePlaybookId("");
+    setAiHooksById({});
+    setAiStatusBanner(null);
+    setVipBodyOverrides({});
+    setEditingVipId(null);
+    setSearchQuery("");
+    setRegionFilter("All");
+    setSectorFilter("All");
+    setPersonaFilter("All");
+    setTierFilter("All");
+    setStageFilter("All");
+    setOwnerFilter("All");
+    setF500Only(false);
+    setCooldownDays(0);
+    setViewMode("wizard");
+    setStep(1);
+  };
+
   const applyQuickCohort = (
     type: 'hot_signals' | 'active_pipeline' | 'tier1_legal_audit' | 'tier1_finance_proc' | 'uncontacted'
   ) => {
@@ -698,7 +731,18 @@ export function ComposerView({
           })}
         </div>
 
-        {/* Sent Logs Toggle Button */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCancelSequence}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[5px] border border-rose-200 bg-rose-50/70 text-rose-700 hover:bg-rose-100 text-xs font-medium transition-colors"
+            title="Cancel and reset the current outreach sequence"
+          >
+            <XCircle size={14} />
+            Cancel Sequence
+          </button>
+
+          {/* Sent Logs Toggle Button */}
         <button
           type="button"
           onClick={() => setViewMode((prev) => (prev === 'logs' ? 'wizard' : 'logs'))}
@@ -711,6 +755,7 @@ export function ComposerView({
           <History size={14} />
           Sent Logs ({sentLogs.length})
         </button>
+        </div>
       </div>
 
       {/* ===================================================================== */}
@@ -1138,9 +1183,19 @@ export function ComposerView({
           </div>
 
           <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-slate-500 font-mono">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCancelSequence}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-700 bg-rose-50/70 border border-rose-200 rounded-[5px] hover:bg-rose-100"
+              >
+                <XCircle size={13} />
+                Cancel Sequence
+              </button>
+              <span className="text-xs text-slate-500 font-mono">
               Showing {Math.min(150, filteredRecipients.length)} of {filteredRecipients.length} matching contacts
             </span>
+            </div>
             <button
               type="button"
               disabled={activeRecipients.length === 0}
@@ -1285,14 +1340,24 @@ export function ComposerView({
 
           {/* Step Navigation Footer */}
           <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-[#E2E8F0] rounded-[5px] hover:bg-slate-50"
-            >
-              <ArrowLeft size={14} />
-              Back to Step 1 · Audience
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-[#E2E8F0] rounded-[5px] hover:bg-slate-50"
+              >
+                <ArrowLeft size={14} />
+                Back to Step 1 · Audience
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelSequence}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-rose-700 bg-rose-50/70 border border-rose-200 rounded-[5px] hover:bg-rose-100"
+              >
+                <XCircle size={13} />
+                Cancel Sequence
+              </button>
+            </div>
 
             <button
               type="button"
@@ -1550,6 +1615,14 @@ export function ComposerView({
               >
                 <ArrowLeft size={14} />
                 Back to Step 2 · Message
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelSequence}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-rose-700 bg-rose-50/70 border border-rose-200 rounded-[5px] hover:bg-rose-100"
+              >
+                <XCircle size={13} />
+                Cancel Sequence
               </button>
 
               <span className="text-xs text-slate-500 flex items-center gap-1.5">
