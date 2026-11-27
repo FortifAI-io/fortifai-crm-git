@@ -329,7 +329,31 @@ export function CustomersView({
       return true;
     });
 
-    if (!sortState) return list;
+    if (!sortState) {
+      const engagedOrgSet = new Set(
+        customers
+          .filter((c) => getEngagementPriorityRank(c) >= 60 && c.organization)
+          .map((c) => c.organization.trim().toLowerCase())
+      );
+      return [...list].sort((a, b) => {
+        const aDirect = getEngagementPriorityRank(a);
+        const bDirect = getEngagementPriorityRank(b);
+        const aOrgBoost =
+          aDirect === 0 && a.organization && engagedOrgSet.has(a.organization.trim().toLowerCase())
+            ? 50
+            : 0;
+        const bOrgBoost =
+          bDirect === 0 && b.organization && engagedOrgSet.has(b.organization.trim().toLowerCase())
+            ? 50
+            : 0;
+        const rankDiff = (bDirect + bOrgBoost) - (aDirect + aOrgBoost);
+        if (rankDiff !== 0) return rankDiff;
+        const aTime = a.last_contacted_at ? Date.parse(a.last_contacted_at) || 0 : 0;
+        const bTime = b.last_contacted_at ? Date.parse(b.last_contacted_at) || 0 : 0;
+        if (bTime !== aTime) return bTime - aTime;
+        return (b.icp_score || 0) - (a.icp_score || 0);
+      });
+    }
 
     const dir = sortState.direction === 'asc' ? 1 : -1;
     return [...list].sort((a, b) => {
