@@ -379,10 +379,10 @@ function ScaleWorkspace({
   useEffect(() => {
     try {
       window.scrollTo(0, 0);
-      if (mainScrollRef.current) {
-        mainScrollRef.current.scrollTop = 0;
-        mainScrollRef.current.scrollLeft = 0;
-      }
+      document.querySelectorAll('main, [data-scroll-container="true"]').forEach((el) => {
+        (el as HTMLElement).scrollTop = 0;
+        (el as HTMLElement).scrollLeft = 0;
+      });
     } catch {}
   }, [activeTab]);
 
@@ -3364,7 +3364,7 @@ function ScaleWorkspace({
         </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 overflow-x-hidden min-w-0 flex flex-col">
         {/* Top Header Bar */}
         <header className="h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-20">
           <div ref={mainScrollRef} className="min-w-0 overflow-x-hidden flex items-center gap-3 min-w-0">
