@@ -1,5 +1,5 @@
-import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Layers, Mail, RotateCcw, Search, Sparkles, Target, Users, X, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Layers, Mail, RotateCcw, Search, Sparkles, Target, Trash2, Users, X } from "lucide-react";
 import type { Contact, CrmUser, DeliveryStatus, Quarter, Region } from '../../types/crm';
 import { CUSTOMER_STAGES, QUARTERS } from '../../data/seedData';
 import { formatCurrency, getRegionBadgeStyle, getStageBadgeStyle } from "../../utils/crmHelpers";
