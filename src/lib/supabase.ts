@@ -514,8 +514,8 @@ export async function pullStateFromSupabase(
   try {
     const [uRes, cRes, oRes, fRes, logsRes, portalRes, dosRes] = await Promise.all([
       client.from('crm_users').select('*'),
-      client.from('contacts').select('*'),
-      client.from('opportunities').select('*'),
+      client.from('contacts').select('*').range(0, 4999),
+      client.from('opportunities').select('*').range(0, 4999),
       client.from('custom_field_definitions').select('*').order('display_order', { ascending: true }),
       client.from('email_logs').select('*').order('sent_at', { ascending: false }).limit(80),
       client.from('portal_events').select('*').order('created_at', { ascending: false }).limit(80),

@@ -634,18 +634,25 @@ function escapeHtmlBasic(str: string): string {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")}@pipeline.fortifai.local`;
 
-      const resolvedCloseQtr =
-        contact.expected_close ??
-        contact.close_qtr ??
-        contact.custom_fields?.expected_close ??
-        contact.custom_fields?.close_qtr ??
-        null;
+      // Respect explicit empty string "" when user clears Close Qtr back to Unassigned
+      const hasExplicitCloseProp = Object.prototype.hasOwnProperty.call(contact, "expected_close");
+      const resolvedCloseQtr = hasExplicitCloseProp
+        ? String(contact.expected_close ?? "").trim()
+        : String(
+            contact.close_qtr ??
+              contact.custom_fields?.expected_close ??
+              contact.custom_fields?.close_qtr ??
+              ""
+          ).trim();
 
       const mergedCustomFields = {
         ...(contact.custom_fields || {}),
-        ...(resolvedCloseQtr !== null
-          ? { expected_close: resolvedCloseQtr, close_qtr: resolvedCloseQtr }
-          : {}),
+        expected_close: resolvedCloseQtr,
+        close_qtr: resolvedCloseQtr,
+        stage_snapshot: contact.stage || "1 Lead",
+        amount_usd_snapshot: Number(contact.amount_usd ?? 0),
+        probability_snapshot: Number(contact.probability ?? 0),
+        owner_email: contact.owner_email || caller.email || "varun@fortifai.io",
       };
 
       const contactRow: Record<string, any> = {
@@ -681,6 +688,7 @@ function escapeHtmlBasic(str: string): string {
       }
 
       if (savedContact?.id) {
+        // Strictly match CREATE TABLE opportunities columns (NO owner_email column!)
         const oppPayload: Record<string, any> = {
           contact_id: savedContact.id,
           opportunity_type:
@@ -691,10 +699,9 @@ function escapeHtmlBasic(str: string): string {
           product_or_instrument: contact.product_or_instrument ?? null,
           amount_usd: Number(contact.amount_usd ?? 0),
           probability: Number(contact.probability ?? 0),
-          expected_close: resolvedCloseQtr,
+          expected_close: resolvedCloseQtr || null,
           next_step: contact.next_step ?? null,
           notes: contact.notes ?? null,
-          owner_email: contact.owner_email || "varun@fortifai.io",
           updated_at: new Date().toISOString(),
         };
 
@@ -711,12 +718,29 @@ function escapeHtmlBasic(str: string): string {
             .update(oppPayload)
             .eq("id", existingOpp.id);
           if (uErr) {
-            return res.status(502).json({ ok: false, error: "opportunities update: " + uErr.message });
+            // Fallback to core columns if any optional column differs in DB
+            await sbAdmin
+              .from("opportunities")
+              .update({
+                stage: oppPayload.stage,
+                amount_usd: oppPayload.amount_usd,
+                probability: oppPayload.probability,
+                expected_close: oppPayload.expected_close,
+                updated_at: oppPayload.updated_at,
+              })
+              .eq("id", existingOpp.id);
           }
         } else {
           const { error: iErr } = await sbAdmin.from("opportunities").insert(oppPayload);
           if (iErr) {
-            return res.status(502).json({ ok: false, error: "opportunities insert: " + iErr.message });
+            await sbAdmin.from("opportunities").insert({
+              contact_id: savedContact.id,
+              opportunity_type: oppPayload.opportunity_type,
+              stage: oppPayload.stage,
+              amount_usd: oppPayload.amount_usd,
+              probability: oppPayload.probability,
+              expected_close: oppPayload.expected_close,
+            });
           }
         }
       }

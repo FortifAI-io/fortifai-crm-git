@@ -322,7 +322,7 @@ function ScaleWorkspace({
     let migrated = loaded;
     try {
       if (!localStorage.getItem("fortifai_cleared_qtr_v1")) {
-        migrated = loaded.map((c) => c.contact_type === "customer" ? { ...c, expected_close: (raw as any).expected_close || (raw as any).custom_fields?.expected_close || (raw as any).custom_fields?.close_qtr || "" } : c);
+        migrated = loaded.map((c) => c.contact_type === "customer" ? { ...c, expected_close: ((c as any).expected_close || (c as any).custom_fields?.expected_close || (c as any).custom_fields?.close_qtr || "") as Quarter } : c);
         localStorage.setItem("fortifai_cleared_qtr_v1", "1");
       }
     } catch {}
@@ -1718,18 +1718,97 @@ function ScaleWorkspace({
     showToast(`Deleted ${target.full_name} (${target.organization}) from database`);
   };
 
+  const persistContactToServer = async (record: Contact) => {
+    try {
+      let token =
+        sessionToken ||
+        (typeof localStorage !== 'undefined'
+          ? localStorage.getItem('fortifai_scale_session_token_v1')
+          : null);
+
+      if (!token) {
+        const sRes = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: authenticatedUser.email,
+            role: currentUser.role,
+            permissions: perms,
+            is_active: authenticatedUser.is_active,
+          }),
+        });
+        const sJson = (await sRes.json().catch(() => ({}))) as { ok?: boolean; token?: string };
+        if (sJson.token) {
+          token = sJson.token;
+          try {
+            localStorage.setItem('fortifai_scale_session_token_v1', token);
+          } catch {}
+        }
+      }
+
+      if (!token) return;
+
+      const resp = await fetch('/api/crm/upsert-contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ contact: record }),
+      });
+      const out = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!resp.ok || !out.ok) {
+        showToast(`DB save warning: ${out.error || resp.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to persist contact to /api/crm/upsert-contact:', err);
+    }
+  };
+
   const updateContact = (id: string, patch: Partial<Contact>) => {
+    let updatedSnapshot: Contact | null = null;
     setContacts((prev) =>
       prev.map((c) => {
         if (c.id !== id) return c;
-        const updated = { ...c, ...patch };
-        if (isLiveConnected) {
-          const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
-          if (client) void upsertSingleContactToSupabase(client, updated);
-        }
+        const hasClosePatch = Object.prototype.hasOwnProperty.call(patch, 'expected_close');
+        const nextCustomFields = hasClosePatch
+          ? {
+              ...(c.custom_fields || {}),
+              expected_close: patch.expected_close || '',
+              close_qtr: patch.expected_close || '',
+            }
+          : { ...(c.custom_fields || {}), ...(patch.custom_fields || {}) };
+
+        const updated: Contact = {
+          ...c,
+          ...patch,
+          custom_fields: nextCustomFields,
+        };
+        updatedSnapshot = updated;
         return updated;
       })
     );
+
+    if (updatedSnapshot) {
+      void persistContactToServer(updatedSnapshot);
+    } else {
+      const fallbackExisting = contactsLatestRef.current.find((c) => c.id === id);
+      if (fallbackExisting) {
+        const hasClosePatch = Object.prototype.hasOwnProperty.call(patch, 'expected_close');
+        const merged: Contact = {
+          ...fallbackExisting,
+          ...patch,
+          custom_fields: hasClosePatch
+            ? {
+                ...(fallbackExisting.custom_fields || {}),
+                expected_close: patch.expected_close || '',
+                close_qtr: patch.expected_close || '',
+              }
+            : { ...(fallbackExisting.custom_fields || {}), ...(patch.custom_fields || {}) },
+        };
+        void persistContactToServer(merged);
+      }
+    }
   };
 
   const updateCustomFieldValue = (
@@ -1737,17 +1816,24 @@ function ScaleWorkspace({
     fieldKey: string,
     value: string | number | boolean
   ) => {
+    let updatedSnapshot: Contact | null = null;
     setContacts((prev) =>
       prev.map((c) => {
         if (c.id !== contactId) return c;
-        const updated = { ...c, custom_fields: { ...c.custom_fields, [fieldKey]: value } };
-        if (isLiveConnected) {
-          const client = buildSupabaseClient(supabaseUrl, supabaseAnonKey);
-          if (client) void upsertSingleContactToSupabase(client, updated);
-        }
+        const updated: Contact = {
+          ...c,
+          ...(fieldKey === 'expected_close' || fieldKey === 'close_qtr'
+            ? { expected_close: String(value || '') as Quarter }
+            : {}),
+          custom_fields: { ...c.custom_fields, [fieldKey]: value },
+        };
+        updatedSnapshot = updated;
         return updated;
       })
     );
+    if (updatedSnapshot) {
+      void persistContactToServer(updatedSnapshot);
+    }
   };
 
   const handleAddContact = (newContact: Omit<Contact, 'id'>) => {

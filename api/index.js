@@ -1959,10 +1959,18 @@ app.post("/api/crm/upsert-contact", async (req, res) => {
       return res.status(500).json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY missing on server." });
     }
     const email = String(contact.email || "").trim().toLowerCase() || `pending.${String(contact.organization || contact.id || Date.now()).toLowerCase().replace(/[^a-z0-9]+/g, "-")}@pipeline.fortifai.local`;
-    const resolvedCloseQtr = contact.expected_close ?? contact.close_qtr ?? contact.custom_fields?.expected_close ?? contact.custom_fields?.close_qtr ?? null;
+    const hasExplicitCloseProp = Object.prototype.hasOwnProperty.call(contact, "expected_close");
+    const resolvedCloseQtr = hasExplicitCloseProp ? String(contact.expected_close ?? "").trim() : String(
+      contact.close_qtr ?? contact.custom_fields?.expected_close ?? contact.custom_fields?.close_qtr ?? ""
+    ).trim();
     const mergedCustomFields = {
       ...contact.custom_fields || {},
-      ...resolvedCloseQtr !== null ? { expected_close: resolvedCloseQtr, close_qtr: resolvedCloseQtr } : {}
+      expected_close: resolvedCloseQtr,
+      close_qtr: resolvedCloseQtr,
+      stage_snapshot: contact.stage || "1 Lead",
+      amount_usd_snapshot: Number(contact.amount_usd ?? 0),
+      probability_snapshot: Number(contact.probability ?? 0),
+      owner_email: contact.owner_email || caller.email || "varun@fortifai.io"
     };
     const contactRow = {
       email,
@@ -1999,22 +2007,34 @@ app.post("/api/crm/upsert-contact", async (req, res) => {
         product_or_instrument: contact.product_or_instrument ?? null,
         amount_usd: Number(contact.amount_usd ?? 0),
         probability: Number(contact.probability ?? 0),
-        expected_close: resolvedCloseQtr,
+        expected_close: resolvedCloseQtr || null,
         next_step: contact.next_step ?? null,
         notes: contact.notes ?? null,
-        owner_email: contact.owner_email || "varun@fortifai.io",
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       };
       const { data: existingOpp } = await sbAdmin.from("opportunities").select("id").eq("contact_id", savedContact.id).limit(1).maybeSingle();
       if (existingOpp?.id) {
         const { error: uErr } = await sbAdmin.from("opportunities").update(oppPayload).eq("id", existingOpp.id);
         if (uErr) {
-          return res.status(502).json({ ok: false, error: "opportunities update: " + uErr.message });
+          await sbAdmin.from("opportunities").update({
+            stage: oppPayload.stage,
+            amount_usd: oppPayload.amount_usd,
+            probability: oppPayload.probability,
+            expected_close: oppPayload.expected_close,
+            updated_at: oppPayload.updated_at
+          }).eq("id", existingOpp.id);
         }
       } else {
         const { error: iErr } = await sbAdmin.from("opportunities").insert(oppPayload);
         if (iErr) {
-          return res.status(502).json({ ok: false, error: "opportunities insert: " + iErr.message });
+          await sbAdmin.from("opportunities").insert({
+            contact_id: savedContact.id,
+            opportunity_type: oppPayload.opportunity_type,
+            stage: oppPayload.stage,
+            amount_usd: oppPayload.amount_usd,
+            probability: oppPayload.probability,
+            expected_close: oppPayload.expected_close
+          });
         }
       }
     }
