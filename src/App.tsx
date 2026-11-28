@@ -3210,12 +3210,12 @@ function ScaleWorkspace({
       onRefreshSession={refreshCmsSession}
       onNotify={showToast}
     >
-      <div className="min-h-screen w-full max-w-full overflow-x-hidden flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
+      <div className="h-screen max-h-screen w-full max-w-full overflow-hidden flex bg-[var(--bg-canvas)] text-[var(--tx-primary)] antialiased">
         {/* Deep Navy 52px Icon Rail (#0D1520) with Unclipped Fixed Hover Tooltips */}
         <aside
           className={`${
             sidebarCollapsed ? "w-[52px]" : "w-[206px]"
-          } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 min-h-screen sticky top-0 h-screen z-30 select-none`}
+          } bg-[#0D1520] text-slate-300 flex flex-col transition-all duration-200 border-r border-slate-800 shrink-0 h-screen max-h-screen z-30 select-none`}
         >
           {/* Floating Unclipped Hover Tooltip for 52px Icon Rail */}
           {sidebarCollapsed && hoveredRailItem && (
@@ -3269,7 +3269,7 @@ function ScaleWorkspace({
           </div>
 
           {/* Icon-First Navigation Rail */}
-          <nav className="flex-1 overflow-y-auto py-2.5 px-2 flex flex-col gap-1">
+          <nav className="flex-1 min-h-0 overflow-y-auto py-2.5 px-2 flex flex-col gap-1">
             {perms.can_view_customers && (
               <div className="space-y-1">
                 {!sidebarCollapsed && (
@@ -3493,9 +3493,9 @@ function ScaleWorkspace({
         </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 overflow-x-hidden min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 w-full h-screen max-h-screen overflow-y-auto overflow-x-hidden flex flex-col">
         {/* Top Header Bar */}
-        <header className="h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-20">
+        <header className="shrink-0 h-[46px] bg-[#0D1520] text-white border-b border-[#1E2D42] px-4 flex items-center justify-between gap-3 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-[13.5px] font-semibold text-white tracking-tight truncate">
               {activeTab === 'customer_analytics' && (
