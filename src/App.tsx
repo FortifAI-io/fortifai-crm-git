@@ -89,7 +89,7 @@ import { AskMeDrawer } from './components/AskMeDrawer';
 import { AccountDossierDrawer } from './components/AccountDossierDrawer';
 import { GlobalSearchBar } from './components/GlobalSearchBar';
 import { CmsText } from './components/CmsText';
-import { LiveCmsHeaderButton, LiveCmsOverlay } from './components/LiveCmsOverlay';
+import { LiveCmsOverlay } from './components/LiveCmsOverlay';
 import { AddContactModal } from './components/modals/AddContactModal';
 import { CsvImportModal } from './components/modals/CsvImportModal';
 
@@ -3625,7 +3625,6 @@ function ScaleWorkspace({
                 Viewing as {ROLE_PRESETS[currentUser.role]?.label || currentUser.role} · Exit Simulation
               </button>
             )}
-            <LiveCmsHeaderButton />
             <button
               type="button"
               onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
